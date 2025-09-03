@@ -1,0 +1,64 @@
+{
+  "editor.formatOnSave": true,
+  "typescript.enablePromptUseWorkspaceTsdk": true,
+  "typescript.preferences.importModuleSpecifier": "shortest",
+  "typescript.tsdk": "node_modules/typescript/lib",
+  "editor.codeActionsOnSave": {
+    "source.fixAll.biome": "explicit"
+  },
+  "[json]": {
+    "editor.defaultFormatter": "biomejs.biome"
+  },
+  "[jsonc]": {
+    "editor.defaultFormatter": "biomejs.biome"
+  },
+  "[javascript]": {
+    "editor.defaultFormatter": "biomejs.biome"
+  },
+  "[javascriptreact]": {
+    "editor.defaultFormatter": "biomejs.biome"
+  },
+  "[typescript]": {
+    "editor.defaultFormatter": "biomejs.biome"
+  },
+  "[typescriptreact]": {
+    "editor.defaultFormatter": "biomejs.biome"
+  },
+  "[rust]": {
+    "editor.defaultFormatter": "rust-lang.rust-analyzer"
+  },
+  "cSpell.ignorePaths": [
+    "package-lock.json",
+    "node_modules",
+    "vscode-extension",
+    ".git/{info,lfs,logs,refs,objects}/**",
+    ".git/{index,*refs,*HEAD}",
+    "move/app/sources/**"
+  ],
+  "cSpell.words": [
+    "Containerfile",
+    "cpio",
+    "enclaveos",
+    "envrc",
+    "fastcrypto",
+    "fullnode",
+    "fuman",
+    "keypair",
+    "keypairs",
+    "libc",
+    "mysten",
+    "nonblocking",
+    "pgdata",
+    "pgkit",
+    "repr",
+    "reqwest",
+    "resolv",
+    "rngs",
+    "rootfs",
+    "serde",
+    "socat",
+    "unistd",
+    "VMADDR",
+    "vsock"
+  ]
+}

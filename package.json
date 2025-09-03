@@ -1,0 +1,25 @@
+{
+  "license": "ISC",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "lint": "biome check",
+    "lint:fix": "biome check --fix"
+  },
+  "dependencies": {
+    "@mysten/bcs": "^1.7.0",
+    "@mysten/seal": "^0.5.1",
+    "@mysten/sui": "^1.37.6",
+    "@types/express": "^5.0.3",
+    "express": "^5.1.0",
+    "got-cjs": "^12.5.4",
+    "http-proxy-middleware": "^3.0.5",
+    "typescript": "^5.9.2"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.2.2",
+    "@types/node": "^24.3.0"
+  },
+  "packageManager": "yarn@1.22.22"
+}

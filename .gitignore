@@ -1,0 +1,10 @@
+/move/enclave/build
+/move/app/build
+
+/out
+/target
+/dist
+/scripts/debug*
+/node_modules
+/.envrc.*
+/config.yaml
