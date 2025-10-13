@@ -76,7 +76,6 @@ export async function encryptMasterKey(masterKey: Buffer): Promise<{
  */
 export async function decryptMasterKey(
   encryptedKeyHex: string,
-  specificEnclaveObjectId?: string,
 ): Promise<Buffer> {
   const { client, suiClient, config } = createSealClient();
   const {
@@ -87,7 +86,7 @@ export async function decryptMasterKey(
   } = config;
 
   // Use the specific enclave object ID if provided, otherwise use the one from config
-  const enclaveObjectId = specificEnclaveObjectId || configEnclaveObjectId;
+  const enclaveObjectId = configEnclaveObjectId;
 
   if (!enclaveObjectId) {
     throw new Error('Enclave not registered - cannot decrypt master key');
@@ -166,15 +165,25 @@ export async function decryptMasterKey(
     ],
   });
 
-  const txBytes = await tx.build({
-    client: suiClient,
-    onlyTransactionKind: true,
-  });
-
-  console.log(`Decrypting using timestamp: ${now}`);
   console.log(
-    `Decrypting master key with enclave ${enclaveObjectId}, using client address ${suiAddress} private key ${keypair.getSecretKey()}`,
+    `Decrypting master key with enclave ${enclaveObjectId}, using client address ${suiAddress} private key ${keypair.getSecretKey()}, timestamp: ${now}`,
   );
+  // the object id might not be available yet, so we need to retry
+  const txBytes = await (async () => {
+    for (let i = 0; i < 30; i++) {
+      try {
+        return await tx.build({
+          client: suiClient,
+          onlyTransactionKind: true,
+        });
+      } catch (e) {
+        console.error(`Error building transaction: ${e}`);
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+      }
+    }
+    throw new Error('Failed to build transaction after 30 attempts');
+  })();
+
   console.log(`Personal message: ${new TextDecoder().decode(message)}`);
   const exportedSessionKey = sessionKey.export();
   console.log(

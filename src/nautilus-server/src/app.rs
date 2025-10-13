@@ -6,7 +6,7 @@ use crate::EnclaveError;
 use axum::Json;
 use axum::extract::State;
 use fastcrypto::encoding::{Encoding, Hex};
-use fastcrypto::traits::Signer;
+use fastcrypto::traits::{KeyPair, Signer, ToFromBytes};
 use serde::{Deserialize, Serialize};
 use std::os::fd::FromRawFd;
 use std::os::fd::IntoRawFd;
@@ -33,6 +33,11 @@ pub struct SignIntentResponse {
     pub signature: String,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct PublicKeyResponse {
+    pub public_key: String,
+}
+
 pub async fn sign_intent(
     State(state): State<Arc<AppState>>,
     Json(request): Json<SignIntentRequest>,
@@ -43,6 +48,16 @@ pub async fn sign_intent(
     let sig = kp.sign(&signing_payload);
     Ok(Json(SignIntentResponse {
         signature: Hex::encode(sig),
+    }))
+}
+
+pub async fn public_key(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<PublicKeyResponse>, EnclaveError> {
+    let kp = state.kp.read().await;
+    let public_key = kp.public().as_bytes();
+    Ok(Json(PublicKeyResponse {
+        public_key: Hex::encode(public_key),
     }))
 }
 

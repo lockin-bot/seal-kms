@@ -11,6 +11,8 @@ import { getCurrentMasterKey } from './master-key.js';
 const ENCLAVE_KEY_REQUEST_INTENT = 2;
 // Intent type for enclave key responses
 const ENCLAVE_KEY_RESPONSE_INTENT = 3;
+// Intent type for public key certificate
+const PUBLIC_KEY_CERTIFICATE_INTENT = 4;
 
 /**
  * Request structure for enclave private key
@@ -26,6 +28,26 @@ export interface EnclaveKeyRequest {
   timestamp_ms: number;
   // Signature of the intent using the enclave's Ed25519 private key
   signature: string; // hex encoded
+}
+
+/**
+ * Certificate for the derived public key with KMS enclave metadata
+ */
+export interface PublicKeyCertificate {
+  // Public key of the derived key pair (hex encoded)
+  derived_public_key: string;
+  // KMS enclave object ID on Sui
+  kms_enclave_object_id: string;
+  // KMS enclave public key (hex encoded)
+  kms_enclave_public_key: string;
+  // Target enclave config object ID
+  target_enclave_config_id: string;
+  // Enclave type for which the key was derived
+  enclave_type: string;
+  // Timestamp when certificate was issued
+  issued_at_ms: number;
+  // Signature of the certificate by KMS enclave (hex encoded)
+  signature: string;
 }
 
 /**
@@ -48,6 +70,8 @@ export interface EnclaveKeyResponse {
   signature: string; // hex encoded
   // Current enclave object ID for client validation
   enclave_object_id: string;
+  // Signed public key certificate for verification chain
+  public_key_certificate: PublicKeyCertificate;
 }
 
 /**
@@ -64,6 +88,70 @@ function derivePrivateKeyForEnclave(
   // HKDF with SHA-256
   const key = crypto.hkdfSync('sha256', masterKey, salt, info, 32);
   return Buffer.from(key);
+}
+
+/**
+ * Derives the Ed25519 public key from a private key seed
+ */
+function derivePublicKey(privateKeySeed: Buffer): Buffer {
+  // Create a private key object from raw seed (32 bytes for Ed25519)
+  // Ed25519 private key in raw format is 32 bytes
+  const privateKeyDer = Buffer.concat([
+    // ASN.1 DER header for Ed25519 private key
+    Buffer.from([
+      0x30,
+      0x2e, // SEQUENCE (46 bytes)
+      0x02,
+      0x01,
+      0x00, // INTEGER version = 0
+      0x30,
+      0x05, // SEQUENCE (5 bytes) - algorithm identifier
+      0x06,
+      0x03,
+      0x2b,
+      0x65,
+      0x70, // OID 1.3.101.112 (Ed25519)
+      0x04,
+      0x22, // OCTET STRING (34 bytes)
+      0x04,
+      0x20, // OCTET STRING (32 bytes) - the actual key
+    ]),
+    privateKeySeed,
+  ]);
+
+  const privateKeyObject = crypto.createPrivateKey({
+    key: privateKeyDer,
+    format: 'der',
+    type: 'pkcs8',
+  });
+
+  // Extract the public key
+  const publicKeyObject = crypto.createPublicKey(privateKeyObject);
+  const publicKeyDer = publicKeyObject.export({
+    format: 'der',
+    type: 'spki',
+  }) as Buffer;
+
+  // Extract raw 32-byte public key from DER format
+  // Ed25519 public key in SPKI format: last 32 bytes
+  return publicKeyDer.subarray(-32);
+}
+
+/**
+ * Fetches the KMS enclave's public key
+ */
+async function getKmsEnclavePublicKey(): Promise<string> {
+  const config = await configManager.loadConfig();
+  const enclaveEndpoint = config.seal.enclave_endpoint;
+
+  const response = await fetch(`${enclaveEndpoint}/public_key`);
+
+  if (!response.ok) {
+    throw new Error(`Failed to get public key: ${response.statusText}`);
+  }
+
+  const { public_key } = (await response.json()) as { public_key: string };
+  return public_key;
 }
 
 /**
@@ -108,7 +196,10 @@ function encryptWithEphemeralKey(
  * Signs the enclave key response using sign_intent
  */
 async function signEnclaveKeyResponse(
-  response: Omit<EnclaveKeyResponse, 'signature' | 'enclave_object_id'>,
+  response: Omit<
+    EnclaveKeyResponse,
+    'signature' | 'enclave_object_id' | 'public_key_certificate'
+  >,
 ): Promise<{ signature: string; enclave_object_id: string }> {
   const enclaveObjectId = configManager.getEnclaveObjectId();
   if (!enclaveObjectId) {
@@ -163,6 +254,87 @@ async function signEnclaveKeyResponse(
   return {
     signature,
     enclave_object_id: enclaveObjectId,
+  };
+}
+
+/**
+ * Creates and signs a public key certificate for a derived key
+ */
+async function createPublicKeyCertificate(
+  derivedPublicKey: Buffer,
+  enclaveType: string,
+  targetEnclaveConfigId: string,
+  timestamp: number,
+): Promise<PublicKeyCertificate> {
+  const enclaveObjectId = configManager.getEnclaveObjectId();
+  if (!enclaveObjectId) {
+    throw new Error('Enclave object ID not configured');
+  }
+
+  // Get the KMS enclave's public key
+  const kmsPublicKey = await getKmsEnclavePublicKey();
+
+  // Create certificate data (without signature)
+  const certificateData = {
+    derived_public_key: derivedPublicKey.toString('hex'),
+    kms_enclave_object_id: enclaveObjectId,
+    kms_enclave_public_key: kmsPublicKey,
+    target_enclave_config_id: targetEnclaveConfigId,
+    enclave_type: enclaveType,
+    issued_at_ms: timestamp,
+  };
+
+  // Create intent for the certificate
+  const intent = bcs
+    .struct('Intent', {
+      intent: bcs.u8(),
+      timestamp_ms: bcs.u64(),
+      data: bcs.struct('PublicKeyCertificate', {
+        derived_public_key: bcs.byteVector(),
+        kms_enclave_object_id: bcs.byteVector(),
+        kms_enclave_public_key: bcs.byteVector(),
+        target_enclave_config_id: bcs.byteVector(),
+        enclave_type: bcs.string(),
+      }),
+    })
+    .serialize({
+      intent: PUBLIC_KEY_CERTIFICATE_INTENT,
+      timestamp_ms: timestamp,
+      data: {
+        derived_public_key: derivedPublicKey,
+        kms_enclave_object_id: Buffer.from(
+          enclaveObjectId.replace('0x', ''),
+          'hex',
+        ),
+        kms_enclave_public_key: Buffer.from(kmsPublicKey, 'hex'),
+        target_enclave_config_id: Buffer.from(
+          targetEnclaveConfigId.replace('0x', ''),
+          'hex',
+        ),
+        enclave_type: enclaveType,
+      },
+    });
+
+  // Get the enclave endpoint from config
+  const config = await configManager.loadConfig();
+  const enclaveEndpoint = config.seal.enclave_endpoint;
+
+  // Sign the intent using the enclave's sign_intent endpoint
+  const signResponse = await fetch(`${enclaveEndpoint}/sign_intent`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ payload: intent.toHex() }),
+  });
+
+  if (!signResponse.ok) {
+    throw new Error(`Failed to sign certificate: ${signResponse.statusText}`);
+  }
+
+  const { signature } = (await signResponse.json()) as { signature: string };
+
+  return {
+    ...certificateData,
+    signature,
   };
 }
 
@@ -288,6 +460,19 @@ export async function processEnclaveKeyRequest(
       attestationResult.enclaveType,
     );
 
+    // Derive the public key for the certificate
+    const derivedPublicKey = derivePublicKey(derivedPrivateKey);
+    console.log('Derived public key:', derivedPublicKey.toString('hex'));
+
+    // Create the public key certificate
+    const publicKeyCertificate = await createPublicKeyCertificate(
+      derivedPublicKey,
+      attestationResult.enclaveType,
+      request.enclave_config_object_id,
+      now,
+    );
+    console.log('Public key certificate:', publicKeyCertificate);
+
     // Encrypt the private key with the ephemeral public key
     const { encrypted, iv, authTag, serverPublicKey } = encryptWithEphemeralKey(
       derivedPrivateKey,
@@ -308,11 +493,12 @@ export async function processEnclaveKeyRequest(
     const { signature, enclave_object_id } =
       await signEnclaveKeyResponse(responseData);
 
-    // Complete response with signature and enclave object ID
+    // Complete response with signature, enclave object ID, and certificate
     const response: EnclaveKeyResponse = {
       ...responseData,
       signature,
       enclave_object_id,
+      public_key_certificate: publicKeyCertificate,
     };
 
     console.log(

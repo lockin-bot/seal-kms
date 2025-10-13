@@ -8,7 +8,7 @@ use axum::{
 };
 use fastcrypto::{ed25519::Ed25519KeyPair, traits::KeyPair};
 use hickory_server::server::ServerFuture;
-use nautilus_server::app::sign_intent;
+use nautilus_server::app::{public_key, sign_intent};
 use nautilus_server::common::{get_attestation, health_check};
 use nautilus_server::dns::LocalhostHandler;
 use nautilus_server::{AppState, app::load_config};
@@ -45,6 +45,7 @@ async fn main() -> Result<()> {
     let app = Router::new()
         .route("/", get(hello))
         .route("/sign_intent", post(sign_intent))
+        .route("/public_key", get(public_key))
         .route("/load_config", get(load_config))
         .route("/get_attestation", get(get_attestation))
         .route("/health_check", get(health_check))
