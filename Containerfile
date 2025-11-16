@@ -4,11 +4,11 @@
 # This containerfile uses StageX (https://stagex.tools) images, which provide a
 # full source bootstrapped, deterministic, and hermetic build toolchain
 
-FROM stagex/pallet-rust@sha256:6fbc40649978232f16cecbaa9c8bd91d5d750a8293969af54684fc4f2fc80e84 AS pallet-rust
-FROM stagex/pallet-nodejs@sha256:b1bdeaec4b377825d5e3bc7431f937b591a1eca2a1669a6827b48bf0cbfcce62 AS pallet-nodejs
-FROM stagex/user-eif_build@sha256:0eabf3d09ccf0421bc09fe9e90b656ecc1140155d5358f35de63e2cfd814f4f9 AS user-eif_build
-FROM stagex/user-gen_initramfs@sha256:aff0791ee9ccdeed1304b5bb4edb7fc5b7f485e11bccf5e61668001243ada815 AS user-gen_initramfs
-FROM stagex/user-cpio@sha256:05701450a186fa1cb5a8287f7fa4d216e610a15d22c2e3e86d70ac3550d9cd3c AS user-cpio
+FROM stagex/pallet-rust@sha256:9c38bf1066dd9ad1b6a6b584974dd798c2bf798985bf82e58024fbe0515592ca AS pallet-rust
+FROM stagex/pallet-nodejs@sha256:1f705b58321b17e87ea68c04431ad83be6e6b64253d0443be4c61501902d57c3 AS pallet-nodejs
+FROM stagex/user-eif_build@sha256:935032172a23772ea1a35c6334aa98aa7b0c46f9e34a040347c7b2a73496ef8a AS user-eif_build
+FROM stagex/user-gen_initramfs@sha256:a87e9a3fa8468d2e08b5abb0a6da4c7a11df22273e2c526cb22e6b131151def8 AS user-gen_initramfs
+FROM stagex/user-cpio@sha256:9c8bf39001eca8a71d5617b46f8c9b4f7426db41a052f198d73400de6f8a16df AS user-cpio
 
 FROM scratch AS base
 ENV TARGET=x86_64-unknown-linux-musl

@@ -8,18 +8,18 @@
     "lint:fix": "biome check --fix"
   },
   "dependencies": {
-    "@mysten/bcs": "^1.8.0",
-    "@mysten/seal": "^0.8.4",
-    "@mysten/sui": "^1.40.0",
-    "@types/express": "^5.0.3",
+    "@mysten/bcs": "^1.9.2",
+    "@mysten/seal": "^0.9.4",
+    "@mysten/sui": "^1.45.0",
+    "@types/express": "^5.0.5",
     "express": "^5.1.0",
     "got-cjs": "^12.5.4",
     "http-proxy-middleware": "^3.0.5",
     "typescript": "^5.9.3"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.2.5",
-    "@types/node": "^24.7.2"
+    "@biomejs/biome": "^2.3.5",
+    "@types/node": "^24.10.1"
   },
   "packageManager": "yarn@1.22.22"
 }

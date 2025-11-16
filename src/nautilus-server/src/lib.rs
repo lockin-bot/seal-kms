@@ -19,8 +19,6 @@ pub mod proxy;
 pub struct AppState {
     /// Keypair - initially ephemeral, can be replaced with master key
     pub kp: Arc<RwLock<Ed25519KeyPair>>,
-    /// Flag to track if master key has been set
-    pub master_key_set: Arc<RwLock<bool>>,
 }
 
 /// Implement IntoResponse for EnclaveError.

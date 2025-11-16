@@ -15,13 +15,13 @@ serde_yaml = { workspace = true }
 
 anyhow = { workspace = true }
 async-trait = "0.1.89"
-axum = { version = "0.8.4", features = ["macros"] }
+axum = { version = "0.8.7", features = ["macros"] }
 bcs = "0.1.6"
 hickory-server = "0.25.2"
 hickory-proto = "0.25.2"
 nix = { workspace = true }
 rand = "0.8.5"
-reqwest = { version = "0.12.23", features = ["json"] }
+reqwest = { version = "0.12.24", features = ["json"] }
 tokio = { workspace = true }
 tower-http = { version = "0.6.6", features = ["cors"] }
 tracing = "0.1.41"

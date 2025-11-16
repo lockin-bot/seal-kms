@@ -36,7 +36,6 @@ async fn main() -> Result<()> {
 
     let state = Arc::new(AppState {
         kp: Arc::new(RwLock::new(eph_kp)),
-        master_key_set: Arc::new(RwLock::new(false)),
     });
 
     // Define your own restricted CORS policy here if needed.
@@ -54,11 +53,11 @@ async fn main() -> Result<()> {
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000")
         .await
-        .map_err(|e| anyhow::anyhow!("Failed to bind to port 3000: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("Failed to bind to port 3000: {e}"))?;
     info!("listening on {}", listener.local_addr().unwrap());
     axum::serve(listener, app.into_make_service())
         .await
-        .map_err(|e| anyhow::anyhow!("Server error: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("Server error: {e}"))?;
 
     dns_server.block_until_done().await?;
     Ok(())

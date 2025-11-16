@@ -43,7 +43,7 @@ pub async fn sign_intent(
     Json(request): Json<SignIntentRequest>,
 ) -> Result<Json<SignIntentResponse>, EnclaveError> {
     let signing_payload = Hex::decode(&request.payload)
-        .map_err(|e| EnclaveError::GenericError(format!("Decode intent from hex error: {}", e)))?;
+        .map_err(|e| EnclaveError::GenericError(format!("Decode intent from hex error: {e}")))?;
     let kp = state.kp.read().await;
     let sig = kp.sign(&signing_payload);
     Ok(Json(SignIntentResponse {
@@ -63,21 +63,21 @@ pub async fn public_key(
 
 pub async fn load_config() -> Result<Json<serde_json::Value>, EnclaveError> {
     let vsock_stream = VsockStream::connect_with_cid_port(2, 30999)
-        .map_err(|e| EnclaveError::GenericError(format!("Connect to vsock error: {}", e)))?;
+        .map_err(|e| EnclaveError::GenericError(format!("Connect to vsock error: {e}")))?;
     let raw_fd = nix::unistd::dup(vsock_stream)
-        .map_err(|e| EnclaveError::GenericError(format!("Dup vsock error: {}", e)))?;
+        .map_err(|e| EnclaveError::GenericError(format!("Dup vsock error: {e}")))?;
     let vsock_stream = unsafe { std::net::TcpStream::from_raw_fd(raw_fd.into_raw_fd()) };
     vsock_stream
         .set_nonblocking(true)
-        .map_err(|e| EnclaveError::GenericError(format!("Set nonblocking error: {}", e)))?;
+        .map_err(|e| EnclaveError::GenericError(format!("Set nonblocking error: {e}")))?;
 
     let mut vsock_stream = TcpStream::from_std(vsock_stream).unwrap();
     let mut buf = Vec::new();
     vsock_stream
         .read_to_end(&mut buf)
         .await
-        .map_err(|e| EnclaveError::GenericError(format!("Read to end error: {}", e)))?;
+        .map_err(|e| EnclaveError::GenericError(format!("Read to end error: {e}")))?;
     let config: serde_json::Value = serde_json::from_slice(&buf)
-        .map_err(|e| EnclaveError::GenericError(format!("Deserialize error: {}", e)))?;
+        .map_err(|e| EnclaveError::GenericError(format!("Deserialize error: {e}")))?;
     Ok(Json(config))
 }

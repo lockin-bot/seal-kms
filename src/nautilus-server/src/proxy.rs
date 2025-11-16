@@ -15,7 +15,7 @@ pub async fn proxy_vsock(vsock_port: u32, host_port: u16) -> anyhow::Result<()> 
     raw_listener.set_nonblocking(true)?;
 
     let listener = AsyncFd::new(raw_listener)?;
-    println!("Proxying vsock:{} to tcp:{}", vsock_port, host_port);
+    println!("Proxying vsock:{vsock_port} to tcp:{host_port}");
 
     loop {
         let mut guard = listener.readable().await?;
@@ -35,7 +35,7 @@ pub async fn proxy_vsock(vsock_port: u32, host_port: u16) -> anyhow::Result<()> 
                 });
             }
             Ok(Err(e)) => {
-                eprintln!("Accept error: {:?}", e);
+                eprintln!("Accept error: {e:?}");
             }
             Err(_would_block) => {
                 continue;
@@ -50,7 +50,7 @@ pub fn spawn_proxy_tcp(host_port: u16, vsock_port: u32) {
 
 pub async fn proxy_tcp(host_port: u16, vsock_port: u32) -> anyhow::Result<()> {
     let listener = TcpListener::bind(("127.0.0.1", host_port)).await?;
-    println!("Proxying tcp:{} to vsock:{}", host_port, vsock_port);
+    println!("Proxying tcp:{host_port} to vsock:{vsock_port}");
     loop {
         let (mut stream, _) = listener.accept().await?;
         tokio::spawn(async move {

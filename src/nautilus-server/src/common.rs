@@ -18,7 +18,7 @@ use std::sync::Arc;
 use tracing::info;
 
 use fastcrypto::ed25519::Ed25519KeyPair;
-/// ==== COMMON TYPES ====
+// ==== COMMON TYPES ====
 
 /// Intent message wrapper struct containing the intent scope and timestamp.
 /// This standardizes the serialized payload for signing.
@@ -81,7 +81,7 @@ pub fn to_signed_response<T: Serialize + Clone>(
     }
 }
 
-/// ==== HEALTHCHECK, GET ATTESTASTION ENDPOINT IMPL ====
+// ==== HEALTHCHECK, GET ATTESTATION ENDPOINT IMPL ====
 
 /// Response for get attestation.
 #[derive(Debug, Serialize, Deserialize)]

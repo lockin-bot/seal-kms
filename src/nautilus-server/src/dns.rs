@@ -21,7 +21,7 @@ impl RequestHandler for LocalhostHandler {
 
         let result = response
             .send_response(MessageResponseBuilder::from_message_request(request).build(
-                request.header().clone(),
+                *request.header(),
                 &[record],
                 &[],
                 &[],
@@ -31,8 +31,8 @@ impl RequestHandler for LocalhostHandler {
         match result {
             Ok(info) => info,
             Err(e) => {
-                eprintln!("Failed to send response: {}", e);
-                ResponseInfo::from(request.header().clone())
+                eprintln!("Failed to send response: {e}");
+                ResponseInfo::from(*request.header())
             }
         }
     }
