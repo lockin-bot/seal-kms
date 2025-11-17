@@ -212,3 +212,587 @@ Possible errors:
 ## Example Implementation
 
 See the test client implementation in `app/test-client.ts` for a complete example of requesting and decrypting a private key.
+
+## Certificate Verification
+
+The Seal KMS service includes public key certificates with its responses to prove the authenticity of derived public keys. These certificates allow clients to verify that a public key was indeed derived by the legitimate KMS enclave.
+
+### What is a Public Key Certificate?
+
+A `PublicKeyCertificate` is a signed attestation from the KMS enclave that contains:
+
+```typescript
+interface PublicKeyCertificate {
+  derived_public_key: string;        // The public key that was derived
+  kms_enclave_object_id: string;     // The KMS enclave's object ID on Sui
+  kms_enclave_public_key: string;    // The KMS enclave's public key (for verification)
+  target_enclave_config_id: string;  // The target enclave's config ID
+  enclave_type: string;              // The enclave type the key was derived for
+  issued_at_ms: number;              // Timestamp when certificate was created
+  signature: string;                 // Ed25519 signature over the certificate data
+}
+```
+
+### Certificate Verifier Implementation
+
+Below is the complete implementation of the certificate verifier utilities that you can copy into your client application:
+
+```typescript
+import { bcs } from '@mysten/bcs';
+import { verifyEd25519Signature } from './attestation-validator.js';
+import type { PublicKeyCertificate } from './enclave-key-service.js';
+
+// Intent type for public key certificate (must match enclave-key-service.ts)
+const PUBLIC_KEY_CERTIFICATE_INTENT = 4;
+
+/**
+ * Options for certificate verification
+ */
+export interface VerifyCertificateOptions {
+  /**
+   * Maximum age of the certificate in milliseconds
+   * Default: 24 hours
+   */
+  maxAgeMs?: number;
+
+  /**
+   * Expected KMS enclave object ID (optional)
+   * If provided, the certificate's KMS enclave object ID must match this value
+   */
+  expectedKmsEnclaveId?: string;
+
+  /**
+   * Expected target enclave config ID (optional)
+   * If provided, the certificate's target enclave config ID must match this value
+   */
+  expectedTargetConfigId?: string;
+
+  /**
+   * Expected enclave type (optional)
+   * If provided, the certificate's enclave type must match this value
+   */
+  expectedEnclaveType?: string;
+}
+
+/**
+ * Result of certificate verification
+ */
+export interface VerificationResult {
+  /**
+   * Whether the certificate is valid
+   */
+  isValid: boolean;
+
+  /**
+   * Error message if verification failed
+   */
+  error?: string;
+
+  /**
+   * Details about what was verified
+   */
+  details?: {
+    signatureValid: boolean;
+    timestampValid: boolean;
+    kmsEnclaveIdValid: boolean;
+    targetConfigIdValid: boolean;
+    enclaveTypeValid: boolean;
+    certificateAge: number;
+  };
+}
+
+/**
+ * Reconstructs the intent that was signed for the certificate
+ * This must match exactly how the certificate was created in createPublicKeyCertificate
+ */
+function reconstructCertificateIntent(
+  certificate: PublicKeyCertificate,
+): Uint8Array {
+  const intent = bcs
+    .struct('Intent', {
+      intent: bcs.u8(),
+      timestamp_ms: bcs.u64(),
+      data: bcs.struct('PublicKeyCertificate', {
+        derived_public_key: bcs.byteVector(),
+        kms_enclave_object_id: bcs.byteVector(),
+        kms_enclave_public_key: bcs.byteVector(),
+        target_enclave_config_id: bcs.byteVector(),
+        enclave_type: bcs.string(),
+      }),
+    })
+    .serialize({
+      intent: PUBLIC_KEY_CERTIFICATE_INTENT,
+      timestamp_ms: certificate.issued_at_ms,
+      data: {
+        derived_public_key: Buffer.from(certificate.derived_public_key, 'hex'),
+        kms_enclave_object_id: Buffer.from(
+          certificate.kms_enclave_object_id.replace('0x', ''),
+          'hex',
+        ),
+        kms_enclave_public_key: Buffer.from(
+          certificate.kms_enclave_public_key,
+          'hex',
+        ),
+        target_enclave_config_id: Buffer.from(
+          certificate.target_enclave_config_id.replace('0x', ''),
+          'hex',
+        ),
+        enclave_type: certificate.enclave_type,
+      },
+    });
+
+  return intent.toBytes();
+}
+
+/**
+ * Verifies the signature on a PublicKeyCertificate
+ *
+ * This function validates that the certificate was signed by the KMS enclave's private key
+ * by reconstructing the signed intent and verifying the signature.
+ *
+ * @param certificate The certificate to verify
+ * @returns true if the signature is valid, false otherwise
+ */
+export function verifyCertificateSignature(
+  certificate: PublicKeyCertificate,
+): boolean {
+  try {
+    // Reconstruct the intent that was signed
+    const intentBytes = reconstructCertificateIntent(certificate);
+
+    // Parse the signature and public key
+    const signature = Buffer.from(certificate.signature, 'hex');
+    const publicKey = Buffer.from(certificate.kms_enclave_public_key, 'hex');
+
+    // Verify the signature
+    return verifyEd25519Signature(
+      Buffer.from(intentBytes),
+      signature,
+      publicKey,
+    );
+  } catch (error) {
+    console.error('Error verifying certificate signature:', error);
+    return false;
+  }
+}
+
+/**
+ * Validates a PublicKeyCertificate with comprehensive checks
+ *
+ * This function performs multiple validation checks:
+ * 1. Signature verification - ensures the certificate was signed by the KMS enclave
+ * 2. Timestamp validation - checks if the certificate is still valid (not expired)
+ * 3. KMS enclave ID validation - optionally verifies the KMS enclave object ID
+ * 4. Target config ID validation - optionally verifies the target enclave config ID
+ * 5. Enclave type validation - optionally verifies the enclave type
+ *
+ * @param certificate The certificate to validate
+ * @param options Validation options
+ * @returns Verification result with details
+ */
+export function validateCertificate(
+  certificate: PublicKeyCertificate,
+  options: VerifyCertificateOptions = {},
+): VerificationResult {
+  const {
+    maxAgeMs = 24 * 60 * 60 * 1000, // 24 hours default
+    expectedKmsEnclaveId,
+    expectedTargetConfigId,
+    expectedEnclaveType,
+  } = options;
+
+  const details = {
+    signatureValid: false,
+    timestampValid: false,
+    kmsEnclaveIdValid: true, // Start as true, set to false if check fails
+    targetConfigIdValid: true,
+    enclaveTypeValid: true,
+    certificateAge: 0,
+  };
+
+  // 1. Verify signature
+  details.signatureValid = verifyCertificateSignature(certificate);
+  if (!details.signatureValid) {
+    return {
+      isValid: false,
+      error: 'Certificate signature verification failed',
+      details,
+    };
+  }
+
+  // 2. Validate timestamp
+  const now = Date.now();
+  const certificateAge = now - certificate.issued_at_ms;
+  details.certificateAge = certificateAge;
+
+  if (certificateAge < 0) {
+    details.timestampValid = false;
+    return {
+      isValid: false,
+      error: 'Certificate issued in the future (invalid timestamp)',
+      details,
+    };
+  }
+
+  if (certificateAge > maxAgeMs) {
+    details.timestampValid = false;
+    return {
+      isValid: false,
+      error: `Certificate expired (age: ${Math.floor(certificateAge / 1000)}s, max: ${Math.floor(maxAgeMs / 1000)}s)`,
+      details,
+    };
+  }
+
+  details.timestampValid = true;
+
+  // 3. Validate KMS enclave object ID (if expected value provided)
+  if (expectedKmsEnclaveId) {
+    const normalizedExpected = expectedKmsEnclaveId.toLowerCase();
+    const normalizedActual = certificate.kms_enclave_object_id.toLowerCase();
+
+    if (normalizedExpected !== normalizedActual) {
+      details.kmsEnclaveIdValid = false;
+      return {
+        isValid: false,
+        error: `KMS enclave object ID mismatch (expected: ${expectedKmsEnclaveId}, got: ${certificate.kms_enclave_object_id})`,
+        details,
+      };
+    }
+  }
+
+  // 4. Validate target enclave config ID (if expected value provided)
+  if (expectedTargetConfigId) {
+    const normalizedExpected = expectedTargetConfigId.toLowerCase();
+    const normalizedActual = certificate.target_enclave_config_id.toLowerCase();
+
+    if (normalizedExpected !== normalizedActual) {
+      details.targetConfigIdValid = false;
+      return {
+        isValid: false,
+        error: `Target enclave config ID mismatch (expected: ${expectedTargetConfigId}, got: ${certificate.target_enclave_config_id})`,
+        details,
+      };
+    }
+  }
+
+  // 5. Validate enclave type (if expected value provided)
+  if (expectedEnclaveType) {
+    if (expectedEnclaveType !== certificate.enclave_type) {
+      details.enclaveTypeValid = false;
+      return {
+        isValid: false,
+        error: `Enclave type mismatch (expected: ${expectedEnclaveType}, got: ${certificate.enclave_type})`,
+        details,
+      };
+    }
+  }
+
+  return {
+    isValid: true,
+    details,
+  };
+}
+
+/**
+ * Extracts and returns key information from a certificate without validation
+ * Useful for displaying certificate details or logging
+ *
+ * @param certificate The certificate to inspect
+ * @returns Formatted certificate information
+ */
+export function inspectCertificate(certificate: PublicKeyCertificate): {
+  derivedPublicKey: string;
+  kmsEnclaveId: string;
+  kmsPublicKey: string;
+  targetConfigId: string;
+  enclaveType: string;
+  issuedAt: Date;
+  age: string;
+} {
+  const age = Date.now() - certificate.issued_at_ms;
+  const ageSeconds = Math.floor(age / 1000);
+  const ageMinutes = Math.floor(ageSeconds / 60);
+  const ageHours = Math.floor(ageMinutes / 60);
+
+  let ageString: string;
+  if (ageHours > 0) {
+    ageString = `${ageHours}h ${ageMinutes % 60}m`;
+  } else if (ageMinutes > 0) {
+    ageString = `${ageMinutes}m ${ageSeconds % 60}s`;
+  } else {
+    ageString = `${ageSeconds}s`;
+  }
+
+  return {
+    derivedPublicKey: certificate.derived_public_key,
+    kmsEnclaveId: certificate.kms_enclave_object_id,
+    kmsPublicKey: certificate.kms_enclave_public_key,
+    targetConfigId: certificate.target_enclave_config_id,
+    enclaveType: certificate.enclave_type,
+    issuedAt: new Date(certificate.issued_at_ms),
+    age: ageString,
+  };
+}
+
+/**
+ * Quick validation function for common use cases
+ * Uses sensible defaults for most scenarios
+ *
+ * @param certificate The certificate to validate
+ * @param trustedKmsEnclaveId The trusted KMS enclave object ID
+ * @returns true if certificate is valid and trusted, false otherwise
+ */
+export function isValidCertificate(
+  certificate: PublicKeyCertificate,
+  trustedKmsEnclaveId: string,
+): boolean {
+  const result = validateCertificate(certificate, {
+    expectedKmsEnclaveId: trustedKmsEnclaveId,
+    maxAgeMs: 24 * 60 * 60 * 1000, // 24 hours
+  });
+
+  return result.isValid;
+}
+```
+
+### Certificate Verification API
+
+The certificate verifier provides several functions for different use cases:
+
+#### 1. Basic Signature Verification
+
+Verify that a certificate was signed by the KMS enclave:
+
+```typescript
+import { verifyCertificateSignature } from './certificate-verifier.js';
+
+const isValid = verifyCertificateSignature(certificate);
+if (isValid) {
+  console.log('Certificate signature is valid');
+}
+```
+
+#### 2. Full Certificate Validation
+
+Validate a certificate with comprehensive checks (signature, timestamp, KMS ID, etc.):
+
+```typescript
+import { validateCertificate } from './certificate-verifier.js';
+
+const result = validateCertificate(certificate, {
+  maxAgeMs: 60 * 60 * 1000,              // Accept certificates up to 1 hour old
+  expectedKmsEnclaveId: '0x123...',      // Verify KMS enclave ID
+  expectedTargetConfigId: '0x456...',    // Verify target config ID (optional)
+  expectedEnclaveType: '0x789::module::EnclaveConfig<0xabc::app::MyApp>'
+});
+
+if (result.isValid) {
+  console.log('Certificate is fully valid');
+  console.log('Details:', result.details);
+} else {
+  console.error('Certificate validation failed:', result.error);
+}
+```
+
+#### 3. Quick Validation (Recommended)
+
+Most common use case - quickly check if a certificate is valid and from a trusted KMS:
+
+```typescript
+import { isValidCertificate } from './certificate-verifier.js';
+
+const trustedKmsId = '0x123...'; // Your trusted KMS enclave ID
+
+if (isValidCertificate(certificate, trustedKmsId)) {
+  // Certificate is valid and from trusted KMS
+  const publicKey = certificate.derived_public_key;
+  // Use the public key...
+}
+```
+
+#### 4. Certificate Inspection
+
+Extract and display certificate information without validation:
+
+```typescript
+import { inspectCertificate } from './certificate-verifier.js';
+
+const info = inspectCertificate(certificate);
+console.log('Derived Public Key:', info.derivedPublicKey);
+console.log('KMS Enclave ID:', info.kmsEnclaveId);
+console.log('Enclave Type:', info.enclaveType);
+console.log('Issued At:', info.issuedAt.toISOString());
+console.log('Age:', info.age); // e.g., "5m 30s"
+```
+
+### Validation Options
+
+```typescript
+interface VerifyCertificateOptions {
+  // Maximum age of the certificate in milliseconds
+  // Default: 24 hours
+  maxAgeMs?: number;
+
+  // Expected KMS enclave object ID (optional)
+  // If provided, the certificate's KMS enclave object ID must match
+  expectedKmsEnclaveId?: string;
+
+  // Expected target enclave config ID (optional)
+  expectedTargetConfigId?: string;
+
+  // Expected enclave type (optional)
+  expectedEnclaveType?: string;
+}
+```
+
+### Verification Result
+
+```typescript
+interface VerificationResult {
+  isValid: boolean;
+  error?: string;
+  details?: {
+    signatureValid: boolean;
+    timestampValid: boolean;
+    kmsEnclaveIdValid: boolean;
+    targetConfigIdValid: boolean;
+    enclaveTypeValid: boolean;
+    certificateAge: number; // in milliseconds
+  };
+}
+```
+
+### Common Usage Examples
+
+#### Example 1: Verifying API Response Certificate
+
+```typescript
+// After receiving a response from Seal KMS
+const response = await fetch('http://<seal-kms-endpoint>/enclave-key', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify(request),
+});
+
+const data = await response.json();
+
+if (data.success && data.public_key_certificate) {
+  const certificate = data.public_key_certificate;
+
+  // Verify the certificate is from your trusted KMS
+  const trustedKmsId = '0xabc...'; // Your trusted KMS enclave ID
+
+  if (isValidCertificate(certificate, trustedKmsId)) {
+    console.log('✓ Certificate is valid and trusted');
+
+    // Verify the certificate's derived key matches the response
+    if (certificate.derived_public_key === data.derived_public_key) {
+      console.log('✓ Public key consistency check passed');
+      // Safe to use the derived public key
+    }
+  } else {
+    console.error('✗ Certificate validation failed');
+    // Do not trust the response
+  }
+}
+```
+
+#### Example 2: Custom Validation Requirements
+
+```typescript
+// Scenario: You only accept very recent certificates (5 minutes)
+// and verify they're for a specific enclave type
+const result = validateCertificate(certificate, {
+  maxAgeMs: 5 * 60 * 1000, // 5 minutes
+  expectedEnclaveType: '0x123::module::EnclaveConfig<0x456::app::MyApp>',
+  expectedKmsEnclaveId: '0xabc...', // Your trusted KMS enclave ID
+});
+
+if (result.isValid) {
+  console.log('✓ Certificate meets all custom requirements');
+} else {
+  console.log('✗ Certificate failed custom validation');
+  console.log('  Reason:', result.error);
+  console.log('  Details:', result.details);
+}
+```
+
+#### Example 3: Batch Certificate Validation
+
+```typescript
+const trustedKmsId = '0xabc...';
+const certificates = [...]; // Array of certificates
+
+const results = certificates.map((cert, index) => {
+  const isValid = isValidCertificate(cert, trustedKmsId);
+  return { index, isValid, enclaveType: cert.enclave_type };
+});
+
+const validCount = results.filter(r => r.isValid).length;
+console.log(`Validated ${certificates.length} certificates: ${validCount} valid`);
+
+results.forEach(result => {
+  const status = result.isValid ? '✓' : '✗';
+  console.log(`  ${status} Certificate ${result.index}: ${result.enclaveType}`);
+});
+```
+
+#### Example 4: Displaying Certificate Information
+
+```typescript
+const info = inspectCertificate(certificate);
+
+console.log('Certificate Information:');
+console.log('  Derived Public Key:', info.derivedPublicKey);
+console.log('  KMS Enclave ID:', info.kmsEnclaveId);
+console.log('  Target Config ID:', info.targetConfigId);
+console.log('  Enclave Type:', info.enclaveType);
+console.log('  Issued At:', info.issuedAt.toISOString());
+console.log('  Age:', info.age);
+```
+
+### Security Best Practices
+
+1. **Always Verify Certificates**: Never trust public keys from API responses without verifying the certificate signature
+2. **Check KMS Enclave ID**: Always provide `expectedKmsEnclaveId` to ensure the certificate is from your trusted KMS
+3. **Validate Freshness**: Use appropriate `maxAgeMs` values based on your security requirements (shorter is better)
+4. **Verify Consistency**: Check that the certificate's `derived_public_key` matches the response's `derived_public_key`
+5. **Validate Enclave Type**: Use `expectedEnclaveType` to ensure the key was derived for the correct enclave
+
+### How Certificate Signing Works
+
+The KMS enclave signs certificates using the following process:
+
+1. Creates an intent structure with type `PUBLIC_KEY_CERTIFICATE_INTENT = 4`
+2. Includes the timestamp and certificate data in the intent
+3. Serializes the intent using BCS (Binary Canonical Serialization)
+4. Signs the serialized intent with the KMS enclave's Ed25519 private key
+
+The verification process reconstructs this same intent and verifies the signature matches, proving the certificate was created by the legitimate KMS enclave.
+
+### Integration Notes
+
+When integrating the certificate verifier into your client application:
+
+1. **Copy the implementation** from the code block above into your project
+2. **Implement `verifyEd25519Signature`** - This should use your preferred crypto library (e.g., `@noble/ed25519`, `tweetnacl`, or Node.js `crypto`)
+3. **Define the `PublicKeyCertificate` type** - Import from your KMS response types or define it locally
+4. **Install dependencies**: `npm install @mysten/bcs`
+
+Example Ed25519 signature verification using `@noble/ed25519`:
+
+```typescript
+import { ed25519 } from '@noble/curves/ed25519';
+
+export function verifyEd25519Signature(
+  message: Buffer,
+  signature: Buffer,
+  publicKey: Buffer,
+): boolean {
+  try {
+    return ed25519.verify(signature, message, publicKey);
+  } catch (error) {
+    return false;
+  }
+}
+```
