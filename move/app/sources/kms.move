@@ -18,15 +18,11 @@ public struct SealRequest has copy, drop {
 
 public struct SetMasterKeyRequest has copy, drop {
     encrypted_key: vector<u8>,
-    iv: vector<u8>,
-    tag: vector<u8>,
 }
 
 public struct EncryptedMasterKey has key {
     id: UID,
     encrypted_key: vector<u8>,
-    iv: vector<u8>,
-    tag: vector<u8>,
     version: u64,
     updated_at: u64,
 }
@@ -39,8 +35,6 @@ fun init(otw: KMS, ctx: &mut TxContext) {
     let encrypted_master_key = EncryptedMasterKey {
         id: object::new(ctx),
         encrypted_key: vector::empty<u8>(),
-        iv: vector::empty<u8>(),
-        tag: vector::empty<u8>(),
         version: 0,
         updated_at: 0,
     };
@@ -78,19 +72,15 @@ public fun set_master_key(
     enclave: &Enclave<KMS>,
     timestamp_ms: u64,
     encrypted_key: vector<u8>,
-    iv: vector<u8>,
-    tag: vector<u8>,
     sig: vector<u8>,
     clock: &sui::clock::Clock) {
     assert!(enclave.verify_signature(
         SET_MASTER_KEY_INTENT,
         timestamp_ms,
-        SetMasterKeyRequest { encrypted_key, iv, tag },
+        SetMasterKeyRequest { encrypted_key },
         &sig
     ), ENoAccess);
     encrypted_master_key.encrypted_key = encrypted_key;
-    encrypted_master_key.iv = iv;
-    encrypted_master_key.tag = tag;
     encrypted_master_key.version = encrypted_master_key.version + 1;
     encrypted_master_key.updated_at = clock.timestamp_ms();
 }

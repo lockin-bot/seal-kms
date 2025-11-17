@@ -1,6 +1,10 @@
 import crypto from 'node:crypto';
 import { bcs } from '@mysten/bcs';
-import { SealClient, SessionKey } from '@mysten/seal';
+import {
+  EncryptedObject,
+  SealClient,
+  SessionKey,
+} from '@mysten/seal';
 import { getFullnodeUrl, SuiClient } from '@mysten/sui/client';
 import { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519';
 import { Transaction } from '@mysten/sui/transactions';
@@ -13,8 +17,13 @@ const SET_MASTER_KEY_INTENT = 1;
 
 /**
  * Creates a SealClient configured with the current environment settings
+ * @param forEncryption - If true, verifies key servers before use (recommended for encryption)
+ * @param serverObjectIds - Optional override for server object IDs
  */
-export function createSealClient(): {
+export function createSealClient(options?: {
+  forEncryption?: boolean;
+  serverObjectIds?: string[];
+}): {
   client: SealClient;
   suiClient: SuiClient;
   config: ReturnType<typeof configManager.getSealConfig>;
@@ -27,42 +36,69 @@ export function createSealClient(): {
     url: getFullnodeUrl(suiNetwork as 'testnet' | 'mainnet'),
   });
 
-  // Use server object IDs from config
-  if (!serverObjectIds || serverObjectIds.length === 0) {
+  // Use provided server object IDs or fall back to config
+  const effectiveServerIds = options?.serverObjectIds || serverObjectIds;
+
+  if (!effectiveServerIds || effectiveServerIds.length === 0) {
     throw new Error(
       'No server object IDs configured. Please add server_object_ids to your config file.',
     );
   }
 
+  // Verify key servers if this client will be used for encryption
+  const shouldVerify = options?.forEncryption ?? false;
+
   const client = new SealClient({
     suiClient,
-    serverConfigs: serverObjectIds.map((id) => ({
+    serverConfigs: effectiveServerIds.map((id) => ({
       objectId: id,
       weight: 1,
     })),
-    verifyKeyServers: false,
+    verifyKeyServers: shouldVerify,
   });
 
   return { client, suiClient, config: sealConfig };
 }
 
 /**
- * Encrypts a master key using Seal
+ * Encrypts a master key using double encryption (inner AES + Seal)
+ * Automatically verifies key servers are available before encryption
+ *
+ * Security model:
+ * 1. Inner AES encryption with Sui secret key (defense against Seal server collusion)
+ * 2. Seal encryption with threshold (defense against single server compromise)
  */
 export async function encryptMasterKey(masterKey: Buffer): Promise<{
   encryptedKey: string;
 }> {
-  const { client, config } = createSealClient();
+  // Create client with server verification enabled for encryption
+  const { client, config } = createSealClient({ forEncryption: true });
 
   if (!config.enclave_object_id) {
     throw new Error('Enclave not registered - cannot encrypt master key');
   }
 
+  // Get Sui secret key for inner encryption
+  const sui_sk = Buffer.from(
+    config.sui_secret_key.startsWith('0x')
+      ? config.sui_secret_key.substring(2)
+      : config.sui_secret_key,
+    'hex',
+  );
+
+  // First layer: AES encryption with Sui secret key
+  // Even if all Seal servers collude, they can't decrypt without this key
+  const { encrypted, iv, authTag } = encryptData(masterKey, sui_sk);
+
+  // Concatenate: iv (16 bytes) || encrypted (32 bytes) || authTag (16 bytes) = 64 bytes
+  const innerEncrypted = Buffer.concat([iv, encrypted, authTag]);
+
+  // Second layer: Seal threshold encryption
   const { encryptedObject: encryptedBytes } = await client.encrypt({
     threshold: 3,
     packageId: config.kms_package_id,
     id: KEY_ID.toString('hex'),
-    data: masterKey,
+    data: innerEncrypted,
   });
 
   return {
@@ -73,11 +109,30 @@ export async function encryptMasterKey(masterKey: Buffer): Promise<{
 /**
  * Decrypts a master key using Seal with enclave attestation
  * Always uses a random ephemeral Sui account for signing
+ * Does not verify key servers to speed up startup
+ *
+ * @param encryptedKeyHex - The encrypted key to decrypt
  */
 export async function decryptMasterKey(
   encryptedKeyHex: string,
 ): Promise<Buffer> {
-  const { client, suiClient, config } = createSealClient();
+  // Parse the encrypted object to extract server IDs
+  const encryptedBytes = Buffer.from(encryptedKeyHex, 'hex');
+  const parsed = EncryptedObject.parse(encryptedBytes);
+  const serverObjectIds = parsed.services.map(
+    ([objectId, _weight]: [string | Uint8Array, number]) => {
+      if (typeof objectId === 'string') {
+        return objectId.startsWith('0x') ? objectId : `0x${objectId}`;
+      }
+      return `0x${Buffer.from(objectId).toString('hex')}`;
+    },
+  );
+
+  // Create client without server verification for faster decryption
+  const { client, suiClient, config } = createSealClient({
+    forEncryption: false,
+    serverObjectIds,
+  });
   const {
     kms_package_id: packageId,
     module_name: moduleName,
@@ -91,8 +146,6 @@ export async function decryptMasterKey(
   if (!enclaveObjectId) {
     throw new Error('Enclave not registered - cannot decrypt master key');
   }
-
-  const encryptedBytes = Buffer.from(encryptedKeyHex, 'hex');
 
   // Always use a random ephemeral keypair
   const keypair = new Ed25519Keypair();
@@ -193,13 +246,36 @@ export async function decryptMasterKey(
     `Transaction bytes:\n${Buffer.from(txBytes as unknown as WithImplicitCoercion<ArrayBufferLike>, txBytes.byteOffset, txBytes.byteLength).toString('hex')}`,
   );
 
+  // Seal decryption - gets the inner AES encrypted data
   const decryptedBytes = await client.decrypt({
     data: encryptedBytes,
     sessionKey,
     txBytes,
   });
 
-  return Buffer.from(decryptedBytes);
+  // The decrypted data is: iv (16 bytes) || encrypted (32 bytes) || authTag (16 bytes)
+  const innerEncrypted = Buffer.from(decryptedBytes);
+
+  if (innerEncrypted.length !== 64) {
+    throw new Error(
+      `Invalid decrypted data length: expected 64 bytes, got ${innerEncrypted.length}`,
+    );
+  }
+
+  const iv = innerEncrypted.subarray(0, 16);
+  const encrypted = innerEncrypted.subarray(16, 48);
+  const authTag = innerEncrypted.subarray(48, 64);
+
+  // Get Sui secret key for inner decryption
+  const sui_sk = Buffer.from(
+    config.sui_secret_key.startsWith('0x')
+      ? config.sui_secret_key.substring(2)
+      : config.sui_secret_key,
+    'hex',
+  );
+
+  // Inner AES decryption
+  return decryptData(encrypted, sui_sk, iv, authTag);
 }
 
 /**
@@ -295,14 +371,8 @@ async function retrieveMasterKey() {
   const {
     sui_network: suiNetwork,
     encrypted_master_key_object_id,
-    sui_secret_key,
   } = configManager.getSealConfig();
-  const sui_sk = Buffer.from(
-    sui_secret_key.startsWith('0x')
-      ? sui_secret_key.substring(2)
-      : sui_secret_key,
-    'hex',
-  );
+
   const suiClient = new SuiClient({
     url: getFullnodeUrl(suiNetwork as 'testnet' | 'mainnet'),
   });
@@ -322,24 +392,33 @@ async function retrieveMasterKey() {
   }
   const fields = content.fields as {
     encrypted_key: number[];
-    iv: number[];
-    tag: number[];
     version: string;
     updated_at: string;
   };
   if (Number(fields.version) < 1) {
     return null;
   }
-  const encrypted_key = decryptData(
-    Buffer.from(fields.encrypted_key),
-    sui_sk,
-    Buffer.from(fields.iv),
-    Buffer.from(fields.tag),
-  ).toString('hex');
+
+  // The encrypted_key is directly the Seal encrypted object
+  const sealEncryptedKey = Buffer.from(fields.encrypted_key).toString('hex');
+
+  // Parse the Seal encrypted object to extract server IDs
+  const encryptedBytes = Buffer.from(sealEncryptedKey, 'hex');
+  const parsed = EncryptedObject.parse(encryptedBytes);
+  const serverObjectIds = parsed.services.map(
+    ([objectId, _weight]: [string | Uint8Array, number]) => {
+      if (typeof objectId === 'string') {
+        return objectId.startsWith('0x') ? objectId : `0x${objectId}`;
+      }
+      return `0x${Buffer.from(objectId).toString('hex')}`;
+    },
+  );
+
   return {
-    encrypted_key,
+    encrypted_key: sealEncryptedKey,
     version: Number(fields.version),
     updated_at: Number(fields.updated_at),
+    server_object_ids: serverObjectIds,
   };
 }
 
@@ -348,22 +427,18 @@ async function storeMasterKey(encryptedKey: string) {
     module_name: moduleName,
     kms_package_id: kmsPackageId,
     encrypted_master_key_object_id,
-    sui_secret_key: suiSecretKey,
     sui_network: suiNetwork,
     enclave_endpoint: enclaveEndpoint,
+    sui_secret_key: suiSecretKey,
   } = configManager.getSealConfig();
   const enclaveObjectId = configManager.getEnclaveObjectId();
   if (enclaveObjectId == null) {
     throw new Error('Enclave not registered - cannot store master key');
   }
-  const sui_sk = Buffer.from(
-    suiSecretKey.startsWith('0x') ? suiSecretKey.substring(2) : suiSecretKey,
-    'hex',
-  );
-  const double_encrypted_master_key = encryptData(
-    Buffer.from(encryptedKey, 'hex'),
-    sui_sk,
-  );
+
+  // The encryptedKey is already double-encrypted (inner AES + Seal)
+  // Store it directly on-chain without additional outer encryption
+  const sealEncryptedBytes = Buffer.from(encryptedKey, 'hex');
 
   const now = Date.now();
 
@@ -373,17 +448,13 @@ async function storeMasterKey(encryptedKey: string) {
       timestamp_ms: bcs.u64(),
       data: bcs.struct('SetMasterKeyRequest', {
         encrypted_key: bcs.byteVector(),
-        iv: bcs.byteVector(),
-        tag: bcs.byteVector(),
       }),
     })
     .serialize({
       intent: SET_MASTER_KEY_INTENT,
       timestamp_ms: now,
       data: {
-        encrypted_key: double_encrypted_master_key.encrypted,
-        iv: double_encrypted_master_key.iv,
-        tag: double_encrypted_master_key.authTag,
+        encrypted_key: sealEncryptedBytes,
       },
     });
 
@@ -407,12 +478,16 @@ async function storeMasterKey(encryptedKey: string) {
   });
 
   // Create keypair from secret key
+  const sui_sk = Buffer.from(
+    suiSecretKey.startsWith('0x') ? suiSecretKey.substring(2) : suiSecretKey,
+    'hex',
+  );
   const keypair = Ed25519Keypair.fromSecretKey(sui_sk);
 
   // Build the transaction
   const tx = new Transaction();
 
-  // Register enclave
+  // Set master key with Seal encrypted object
   tx.moveCall({
     target: `${kmsPackageId}::${moduleName}::set_master_key`,
     typeArguments: [],
@@ -420,9 +495,7 @@ async function storeMasterKey(encryptedKey: string) {
       tx.object(encrypted_master_key_object_id),
       tx.object(enclaveObjectId),
       tx.pure.u64(now),
-      tx.pure.vector('u8', double_encrypted_master_key.encrypted),
-      tx.pure.vector('u8', double_encrypted_master_key.iv),
-      tx.pure.vector('u8', double_encrypted_master_key.authTag),
+      tx.pure.vector('u8', sealEncryptedBytes),
       tx.pure.vector('u8', Buffer.from(enclaveSignature, 'hex')),
       tx.object('0x6'),
     ],
@@ -501,17 +574,62 @@ export async function retrieveAndDecryptMasterKey() {
 /**
  * Initialize master key on enclave startup
  * Either retrieves existing key or generates a new one
+ * Also handles rotation if server object IDs have changed
  */
 export async function initializeMasterKey() {
+  const currentServerIds = configManager.getSealConfig().server_object_ids;
+
   // Check if key exists
-  const existingKey = await retrieveAndDecryptMasterKey();
-  if (existingKey) {
-    console.log('Master key restored.');
-    return existingKey;
+  const record = await retrieveMasterKey();
+
+  if (!record) {
+    // No existing key, generate new one
+    console.log('Generating new master key.');
+    const newKey = await generateAndStoreMasterKey();
+    currentMasterKey = newKey;
+    return newKey;
   }
 
-  // Generate new key
-  console.log('Generating new master key.');
-  const newKey = await generateAndStoreMasterKey();
-  return newKey;
+  // Decrypt the master key
+  const decryptedKey = await decryptMasterKey(record.encrypted_key);
+
+  // Check if server object IDs have changed
+  const storedServerIds = record.server_object_ids;
+  const serverIdsChanged =
+    storedServerIds.length !== currentServerIds.length ||
+    storedServerIds.some(
+      (id, index) =>
+        id.toLowerCase() !== currentServerIds[index]?.toLowerCase(),
+    );
+
+  if (serverIdsChanged) {
+    console.log('Server object IDs have changed, rotating master key...');
+    console.log('Old server IDs:', storedServerIds);
+    console.log('New server IDs:', currentServerIds);
+
+    // Re-encrypt with new servers (verifies availability)
+    const { encryptedKey } = await encryptMasterKey(decryptedKey);
+
+    // Store the re-encrypted key
+    await storeMasterKey(encryptedKey);
+
+    currentMasterKey = {
+      masterKey: decryptedKey.toString('hex'),
+      masterKeyBuffer: decryptedKey,
+      encryptedKey,
+    };
+
+    console.log('Master key rotated successfully.');
+    return currentMasterKey;
+  }
+
+  // Server IDs haven't changed
+  console.log('Server object IDs unchanged, master key restored.');
+  currentMasterKey = {
+    masterKey: decryptedKey.toString('hex'),
+    masterKeyBuffer: decryptedKey,
+    encryptedKey: record.encrypted_key,
+  };
+
+  return currentMasterKey;
 }
