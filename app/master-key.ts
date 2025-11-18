@@ -1,10 +1,6 @@
 import crypto from 'node:crypto';
 import { bcs } from '@mysten/bcs';
-import {
-  EncryptedObject,
-  SealClient,
-  SessionKey,
-} from '@mysten/seal';
+import { EncryptedObject, SealClient, SessionKey } from '@mysten/seal';
 import { getFullnodeUrl, SuiClient } from '@mysten/sui/client';
 import { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519';
 import { Transaction } from '@mysten/sui/transactions';
@@ -368,10 +364,8 @@ export function isMasterKeyInitialized(): boolean {
 }
 
 async function retrieveMasterKey() {
-  const {
-    sui_network: suiNetwork,
-    encrypted_master_key_object_id,
-  } = configManager.getSealConfig();
+  const { sui_network: suiNetwork, encrypted_master_key_object_id } =
+    configManager.getSealConfig();
 
   const suiClient = new SuiClient({
     url: getFullnodeUrl(suiNetwork as 'testnet' | 'mainnet'),

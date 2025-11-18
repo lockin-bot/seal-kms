@@ -62,8 +62,9 @@ pub async fn public_key(
 }
 
 pub async fn load_config() -> Result<Json<serde_json::Value>, EnclaveError> {
-    let vsock_stream = VsockStream::connect_with_cid_port(2, 30999)
-        .map_err(|e| EnclaveError::GenericError(format!("Connect to vsock error: {e}")))?;
+    let vsock_stream =
+        VsockStream::connect_with_cid_port(2, 33300 + vsock::get_local_cid().unwrap())
+            .map_err(|e| EnclaveError::GenericError(format!("Connect to vsock error: {e}")))?;
     let raw_fd = nix::unistd::dup(vsock_stream)
         .map_err(|e| EnclaveError::GenericError(format!("Dup vsock error: {e}")))?;
     let vsock_stream = unsafe { std::net::TcpStream::from_raw_fd(raw_fd.into_raw_fd()) };

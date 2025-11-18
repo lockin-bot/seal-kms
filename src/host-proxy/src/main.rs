@@ -34,7 +34,7 @@ async fn main() -> Result<()> {
     }
 
     let raw_listener =
-        VsockListener::bind_with_cid_port(vsock::VMADDR_CID_ANY, config.enclave_config_port)?;
+        VsockListener::bind_with_cid_port(vsock::VMADDR_CID_ANY, 33300 + config.enclave_cid)?;
     raw_listener.set_nonblocking(true)?;
 
     let config_listener = AsyncFd::new(raw_listener)?;
@@ -61,6 +61,7 @@ async fn main() -> Result<()> {
                         let buf = serde_json::to_vec(&config.enclave_config)?;
                         stream.write_all(&buf).await?;
                         stream.shutdown().await?;
+                        println!("Sent config to enclave cid: {}", config.enclave_cid);
                     }
                     Ok(Err(e)) => {
                         eprintln!("Accept error: {:?}", e);

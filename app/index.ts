@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519';
 import express from 'express';
 import { createProxyMiddleware } from 'http-proxy-middleware';
@@ -219,9 +220,11 @@ async function startServer() {
   // Initialize master key on startup
   try {
     const masterKey = await initializeMasterKey();
-    console.log('Master key initialized:', {
-      isNew: 'version' in masterKey && masterKey.version === 0,
-    });
+    const hash = crypto
+      .createHash('sha256')
+      .update(masterKey.masterKeyBuffer)
+      .digest('hex');
+    console.log('Master key initialized, key hash: ', hash);
   } catch (error) {
     console.error('Failed to initialize master key:', error);
     console.log(

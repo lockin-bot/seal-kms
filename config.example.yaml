@@ -1,5 +1,4 @@
 enclave_cid: 5
-enclave_config_port: 30999
 enclave_config:
   seal:
     kms_package_id: "0x1234567890123456789012345678901234567890123456789012345678901234"
