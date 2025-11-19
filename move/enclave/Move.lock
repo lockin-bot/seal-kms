@@ -27,14 +27,20 @@ flavor = "sui"
 
 [env]
 
+[env.devnet]
+chain-id = "c2bef0b2"
+original-published-id = "0x5baaf9849ff54513f6021d4a758fbb4cdb794eb344045d023b79e9c7d5a0d4b5"
+latest-published-id = "0x5baaf9849ff54513f6021d4a758fbb4cdb794eb344045d023b79e9c7d5a0d4b5"
+published-version = "1"
+
 [env.testnet]
 chain-id = "4c78adac"
 original-published-id = "0x477d5131cd347de4b8bf3499e647644d24e2a6da7419f5f23805c8f90b3807a0"
 latest-published-id = "0x477d5131cd347de4b8bf3499e647644d24e2a6da7419f5f23805c8f90b3807a0"
 published-version = "1"
 
-[env.devnet]
-chain-id = "c2bef0b2"
-original-published-id = "0x5baaf9849ff54513f6021d4a758fbb4cdb794eb344045d023b79e9c7d5a0d4b5"
-latest-published-id = "0x5baaf9849ff54513f6021d4a758fbb4cdb794eb344045d023b79e9c7d5a0d4b5"
+[env.mainnet]
+chain-id = "35834a8a"
+original-published-id = "0xb5e176170a7aaa2a2d520b307abe7a31a97699c0127ef9b90c0e529d81ca33e8"
+latest-published-id = "0xb5e176170a7aaa2a2d520b307abe7a31a97699c0127ef9b90c0e529d81ca33e8"
 published-version = "1"

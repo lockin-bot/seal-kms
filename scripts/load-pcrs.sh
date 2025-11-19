@@ -1,4 +1,5 @@
 #!/bin/bash
+set -e
 
 ATTESTATION_HEX=$(curl -s $ENCLAVE_ENDPOINT/get_attestation | jq -r '.attestation')
 ATTESTATION_ARRAY=$(node -e 'console.log(Array.from(Buffer.from(process.argv[1], "hex")).map(v => `${v}u8`).join(", "))' "$ATTESTATION_HEX")

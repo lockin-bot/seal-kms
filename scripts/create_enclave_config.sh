@@ -19,6 +19,10 @@ PCR0_ARRAY=$(node -e 'console.log(Array.from(Buffer.from(process.argv[1], "hex")
 PCR1_ARRAY=$(node -e 'console.log(Array.from(Buffer.from(process.argv[1], "hex")).map(v => `${v}u8`).join(", "))' "$PCR1")
 PCR2_ARRAY=$(node -e 'console.log(Array.from(Buffer.from(process.argv[1], "hex")).map(v => `${v}u8`).join(", "))' "$PCR2")
 
-# Execute sui client command with the converted array and provided arguments
+# The name for the enclave config (as a hex-encoded string)
+NAME="\"kms-enclave-config\""
+
+# Execute sui client command with the correct parameters
+# Using the KMS module structure from kms.move
 sui client ptb \
-    --move-call "${ENCLAVE_PACKAGE_ID}::enclave::update_pcrs<${KMS_PACKAGE_ID}::${MODULE_NAME}::${OTW_NAME}>" @${ENCLAVE_CONFIG_OBJECT_ID} @${CAP_OBJECT_ID} vector[${PCR0_ARRAY}] vector[${PCR1_ARRAY}] vector[${PCR2_ARRAY}]
+    --move-call "${ENCLAVE_PACKAGE_ID}::enclave::create_enclave_config<${KMS_PACKAGE_ID}::kms::KMS>" "@${CAP_OBJECT_ID}" ${NAME} vector[${PCR0_ARRAY}] vector[${PCR1_ARRAY}] vector[${PCR2_ARRAY}] "@${ENCLAVE_REGISTER}"
