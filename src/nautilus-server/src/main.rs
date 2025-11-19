@@ -30,7 +30,7 @@ async fn main() -> Result<()> {
     // Allow accessing app server via vsock
     nautilus_server::proxy::spawn_proxy_vsock(8000, 8000);
     // Transparent proxy for outbound TLS traffic
-    nautilus_server::proxy::spawn_proxy_tcp(443, 30443);
+    nautilus_server::proxy::spawn_proxy_tcp(443, 44300 + vsock::get_local_cid().unwrap());
 
     let eph_kp = Ed25519KeyPair::generate(&mut rand::rngs::ThreadRng::default());
 

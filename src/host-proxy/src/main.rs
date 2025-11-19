@@ -20,7 +20,7 @@ async fn main() -> Result<()> {
     let config = config::load_config(std::option_env!("CONFIG_PATH").unwrap_or("config.yaml"))?;
     let (aborter, _) =
         broadcast::channel(config.tcp_proxies.len() + config.vsock_proxies.len() + 2);
-    transparent_proxy::spawn_transparent_proxy(config.transparent_proxy_port, aborter.subscribe());
+    transparent_proxy::spawn_transparent_proxy(44300 + config.enclave_cid, aborter.subscribe());
     for proxy in config.tcp_proxies {
         proxy::spawn_proxy_tcp(
             proxy.host_port,

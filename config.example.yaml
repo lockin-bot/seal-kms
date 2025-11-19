@@ -24,7 +24,6 @@ enclave_config:
         # apiKeyName: "X-API-Key"
         # apiKey: "your-api-key-here"
 
-transparent_proxy_port: 30443
 tcp_proxies:
   - host_port: 30080
     vsock_port: 8000

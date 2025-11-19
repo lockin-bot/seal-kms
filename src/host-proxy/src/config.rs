@@ -47,7 +47,6 @@ pub struct EnclaveConfig {
 pub struct ServerConfig {
     pub tcp_proxies: Vec<StreamProxy>,
     pub vsock_proxies: Vec<StreamProxy>,
-    pub transparent_proxy_port: u32,
     pub enclave_cid: u32,
     pub enclave_config: EnclaveConfig,
 }
