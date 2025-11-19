@@ -51,9 +51,13 @@ export function createSealClient(options?: {
     weight: config.weight ?? 1,
   }));
 
-  console.log('[DEBUG createSealClient] Final server configs passed to SealClient:');
+  console.log(
+    '[DEBUG createSealClient] Final server configs passed to SealClient:',
+  );
   normalizedServerConfigs.forEach((s, i) => {
-    console.log(`  ${i + 1}. ${s.objectId} - weight: ${s.weight} ${s.apiKeyName ? `(API key: ${s.apiKeyName})` : ''}`);
+    console.log(
+      `  ${i + 1}. ${s.objectId} - weight: ${s.weight} ${s.apiKeyName ? `(API key: ${s.apiKeyName})` : ''}`,
+    );
   });
 
   // Verify key servers if this client will be used for encryption
@@ -158,7 +162,7 @@ export async function decryptMasterKey(
 
       return {
         objectId,
-        weight,  // ✅ Extracted from encrypted object
+        weight, // ✅ Extracted from encrypted object
         // Merge API key configuration if available
         ...(configuredServer?.apiKeyName && {
           apiKeyName: configuredServer.apiKeyName,
@@ -168,9 +172,13 @@ export async function decryptMasterKey(
     },
   );
 
-  console.log('[DEBUG decryptMasterKey] Extracted server configs from encrypted object:');
+  console.log(
+    '[DEBUG decryptMasterKey] Extracted server configs from encrypted object:',
+  );
   serverConfigs.forEach((s, i) => {
-    console.log(`  ${i + 1}. ${s.objectId} - weight: ${s.weight} (from encrypted object)`);
+    console.log(
+      `  ${i + 1}. ${s.objectId} - weight: ${s.weight} (from encrypted object)`,
+    );
   });
 
   // Create client without server verification for faster decryption
@@ -479,7 +487,7 @@ async function retrieveMasterKey() {
 
       return {
         objectId,
-        weight,  // ✅ Extracted from encrypted object
+        weight, // ✅ Extracted from encrypted object
         // Merge API key configuration if available
         ...(configuredServer?.apiKeyName && {
           apiKeyName: configuredServer.apiKeyName,
