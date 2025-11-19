@@ -89,7 +89,6 @@ public fun set_master_key(
 fun test_seal_flow() {
     use sui::test_scenario::{Self, ctx, next_tx};
     use sui::nitro_attestation;
-    use sui::test_utils::destroy;
     use enclave::enclave::{register_enclave, create_enclave_config, update_pcrs, EnclaveConfig};
 
     let mut scenario = test_scenario::begin(@0x1);
@@ -143,6 +142,6 @@ fun test_seal_flow() {
     test_scenario::return_shared(config);
     clock.destroy_for_testing();
     enclave.destroy();
-    destroy(cap);
+    transfer::public_transfer(cap, @0x1);
     scenario.end();
 }
