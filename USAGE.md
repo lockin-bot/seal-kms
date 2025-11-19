@@ -801,34 +801,38 @@ export function verifyEd25519Signature(
 
 ### Automatic Key Rotation
 
-The system automatically rotates the master key when you change `server_object_ids` in the config.
+The system automatically rotates the master key when you change `server_configs` in the config.
 
 **How it works:**
 1. The Seal encrypted object contains server IDs in its `services` field
 2. On startup, the system parses the encrypted object to extract which servers were used
 3. If they differ from the current config, automatic rotation occurs:
    - Decrypts master key using old servers (from encrypted object)
-   - Re-encrypts using new servers (from current config)  
+   - Re-encrypts using new servers (from current config)
    - Updates on-chain storage
 
 **Example:**
 ```yaml
 # Initial config
-server_object_ids:
-  - "0x73d05d62c18d9374e3ea529e8e0ed6161da1a141a94d3f76ae3fe4e99356db75"
-  - "0xf5d14a81a982144ae441cd7d64b09027f116a468bd36e7eca494f750591623c8"
+server_configs:
+  - objectId: "0x73d05d62c18d9374e3ea529e8e0ed6161da1a141a94d3f76ae3fe4e99356db75"
+    weight: 1
+  - objectId: "0xf5d14a81a982144ae441cd7d64b09027f116a468bd36e7eca494f750591623c8"
+    weight: 1
 
 # Change servers and restart → automatic rotation!
-server_object_ids:
-  - "0x5466b7df5c15b508678d51496ada8afab0d6f70a01c10613123382b1b8131007"
-  - "0x9c949e53c36ab7a9c484ed9e8b43267a77d4b8d70e79aa6b39042e3d4c434105"
+server_configs:
+  - objectId: "0x5466b7df5c15b508678d51496ada8afab0d6f70a01c10613123382b1b8131007"
+    weight: 1
+  - objectId: "0x9c949e53c36ab7a9c484ed9e8b43267a77d4b8d70e79aa6b39042e3d4c434105"
+    weight: 1
 ```
 
 **Logs during rotation:**
 ```
-Server object IDs have changed, rotating master key...
-Old server IDs: [0x73d05d62..., 0xf5d14a81...]
-New server IDs: [0x5466b7df..., 0x9c949e53...]
+Server configs have changed, rotating master key...
+Old server configs: [0x73d05d62..., 0xf5d14a81...]
+New server configs: [0x5466b7df..., 0x9c949e53...]
 Decrypting master key with old servers...
 Master key decrypted with old servers
 Master key re-encrypted with new servers

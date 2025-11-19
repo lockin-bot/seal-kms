@@ -8,6 +8,22 @@ pub struct StreamProxy {
     pub vsock_port: u32,
 }
 
+fn default_weight() -> u32 {
+    1
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct KeyServerConfig {
+    #[serde(rename = "objectId")]
+    pub object_id: String,
+    #[serde(default = "default_weight")]
+    pub weight: u32,
+    #[serde(rename = "apiKeyName", skip_serializing_if = "Option::is_none")]
+    pub api_key_name: Option<String>,
+    #[serde(rename = "apiKey", skip_serializing_if = "Option::is_none")]
+    pub api_key: Option<String>,
+}
+
 #[derive(Debug, Deserialize, Serialize)]
 pub struct SealConfig {
     pub enclave_package_id: String,
@@ -19,7 +35,7 @@ pub struct SealConfig {
     pub encrypted_master_key_object_id: String,
     pub sui_secret_key: String,
     pub sui_network: String,
-    pub server_object_ids: Vec<String>,
+    pub server_configs: Vec<KeyServerConfig>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]

@@ -1,4 +1,13 @@
+import type { KeyServerConfig as SealKeyServerConfig } from '@mysten/seal';
 import { got } from 'got-cjs';
+
+// Re-export the Seal SDK type
+export type { SealKeyServerConfig as KeyServerConfig };
+
+// Our config type makes weight optional (defaults to 1)
+export type KeyServerConfigInput = Omit<SealKeyServerConfig, 'weight'> & {
+  weight?: number;
+};
 
 export interface SealConfig {
   enclave_package_id: string;
@@ -10,7 +19,7 @@ export interface SealConfig {
   kms_package_id: string;
   sui_secret_key: string;
   sui_network: string;
-  server_object_ids: string[]; // Server object IDs for Seal key servers (required)
+  server_configs: KeyServerConfigInput[]; // Server configs for Seal key servers (required)
   enclave_object_id?: string; // Will be set after registration
 }
 

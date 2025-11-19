@@ -10,14 +10,19 @@ enclave_config:
     encrypted_master_key_object_id: "0x1234567890123456789012345678901234567890123456789012345678901234"
     sui_secret_key: "1234567890123456789012345678901234567890123456789012345678901234"
     sui_network: "testnet"
-    # Server object IDs for Seal key servers (required)
+    # Server configs for Seal key servers (required)
     # https://github.com/MystenLabs/seal/blob/main/Pricing.md#verified-key-servers
-    server_object_ids:
-      - "0x73d05d62c18d9374e3ea529e8e0ed6161da1a141a94d3f76ae3fe4e99356db75"
-      - "0xf5d14a81a982144ae441cd7d64b09027f116a468bd36e7eca494f750591623c8"
-      - "0x6068c0acb197dddbacd4746a9de7f025b2ed5a5b6c1b1ab44dade4426d141da2"
-      - "0x5466b7df5c15b508678d51496ada8afab0d6f70a01c10613123382b1b8131007"
-      - "0x9c949e53c36ab7a9c484ed9e8b43267a77d4b8d70e79aa6b39042e3d4c434105"
+    server_configs:
+      - objectId: "0x73d05d62c18d9374e3ea529e8e0ed6161da1a141a94d3f76ae3fe4e99356db75"
+        # weight: 1  # Optional, defaults to 1
+      - objectId: "0xf5d14a81a982144ae441cd7d64b09027f116a468bd36e7eca494f750591623c8"
+      - objectId: "0x6068c0acb197dddbacd4746a9de7f025b2ed5a5b6c1b1ab44dade4426d141da2"
+      - objectId: "0x5466b7df5c15b508678d51496ada8afab0d6f70a01c10613123382b1b8131007"
+      - objectId: "0x9c949e53c36ab7a9c484ed9e8b43267a77d4b8d70e79aa6b39042e3d4c434105"
+        # Optional fields:
+        # weight: 1  # Defaults to 1; use higher values for trusted/important servers
+        # apiKeyName: "X-API-Key"
+        # apiKey: "your-api-key-here"
 
 transparent_proxy_port: 30443
 tcp_proxies:

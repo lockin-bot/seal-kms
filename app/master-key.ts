@@ -1,6 +1,11 @@
 import crypto from 'node:crypto';
 import { bcs } from '@mysten/bcs';
-import { EncryptedObject, SealClient, SessionKey } from '@mysten/seal';
+import {
+  EncryptedObject,
+  type KeyServerConfig,
+  SealClient,
+  SessionKey,
+} from '@mysten/seal';
 import { getFullnodeUrl, SuiClient } from '@mysten/sui/client';
 import { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519';
 import { Transaction } from '@mysten/sui/transactions';
@@ -14,42 +19,49 @@ const SET_MASTER_KEY_INTENT = 1;
 /**
  * Creates a SealClient configured with the current environment settings
  * @param forEncryption - If true, verifies key servers before use (recommended for encryption)
- * @param serverObjectIds - Optional override for server object IDs
+ * @param serverConfigs - Optional override for server configs
  */
 export function createSealClient(options?: {
   forEncryption?: boolean;
-  serverObjectIds?: string[];
+  serverConfigs?: KeyServerConfig[];
 }): {
   client: SealClient;
   suiClient: SuiClient;
   config: ReturnType<typeof configManager.getSealConfig>;
 } {
   const sealConfig = configManager.getSealConfig();
-  const { sui_network: suiNetwork, server_object_ids: serverObjectIds } =
-    sealConfig;
+  const { sui_network: suiNetwork, server_configs: serverConfigs } = sealConfig;
 
   const suiClient = new SuiClient({
     url: getFullnodeUrl(suiNetwork as 'testnet' | 'mainnet'),
   });
 
-  // Use provided server object IDs or fall back to config
-  const effectiveServerIds = options?.serverObjectIds || serverObjectIds;
+  // Use provided server configs or fall back to config
+  const effectiveServerConfigs = options?.serverConfigs || serverConfigs;
 
-  if (!effectiveServerIds || effectiveServerIds.length === 0) {
+  if (!effectiveServerConfigs || effectiveServerConfigs.length === 0) {
     throw new Error(
-      'No server object IDs configured. Please add server_object_ids to your config file.',
+      'No server configs configured. Please add server_configs to your config file.',
     );
   }
+
+  // Normalize server configs: ensure weight defaults to 1 if not specified
+  const normalizedServerConfigs = effectiveServerConfigs.map((config) => ({
+    ...config,
+    weight: config.weight ?? 1,
+  }));
+
+  console.log('[DEBUG createSealClient] Final server configs passed to SealClient:');
+  normalizedServerConfigs.forEach((s, i) => {
+    console.log(`  ${i + 1}. ${s.objectId} - weight: ${s.weight} ${s.apiKeyName ? `(API key: ${s.apiKeyName})` : ''}`);
+  });
 
   // Verify key servers if this client will be used for encryption
   const shouldVerify = options?.forEncryption ?? false;
 
   const client = new SealClient({
     suiClient,
-    serverConfigs: effectiveServerIds.map((id) => ({
-      objectId: id,
-      weight: 1,
-    })),
+    serverConfigs: normalizedServerConfigs,
     verifyKeyServers: shouldVerify,
   });
 
@@ -115,19 +127,56 @@ export async function decryptMasterKey(
   // Parse the encrypted object to extract server IDs
   const encryptedBytes = Buffer.from(encryptedKeyHex, 'hex');
   const parsed = EncryptedObject.parse(encryptedBytes);
-  const serverObjectIds = parsed.services.map(
-    ([objectId, _weight]: [string | Uint8Array, number]) => {
-      if (typeof objectId === 'string') {
-        return objectId.startsWith('0x') ? objectId : `0x${objectId}`;
-      }
-      return `0x${Buffer.from(objectId).toString('hex')}`;
+
+  // Get configured server configs to retrieve API keys
+  const sealConfig = configManager.getSealConfig();
+  const configuredServers = new Map(
+    sealConfig.server_configs.map((s) => [s.objectId.toLowerCase(), s]),
+  );
+
+  // Extract weights from encrypted object by counting server occurrences
+  // In Seal, a server with weight N appears N times in the services array
+  const serverWeights = new Map<string, number>();
+  for (const [objectId, _shareIndex] of parsed.services) {
+    const id =
+      typeof objectId === 'string'
+        ? objectId.startsWith('0x')
+          ? objectId
+          : `0x${objectId}`
+        : `0x${Buffer.from(objectId).toString('hex')}`;
+
+    const normalizedId = id.toLowerCase();
+    serverWeights.set(normalizedId, (serverWeights.get(normalizedId) || 0) + 1);
+  }
+
+  // Build server configs with weights from encrypted object and API keys from config
+  const serverConfigs = Array.from(serverWeights.entries()).map(
+    ([normalizedId, weight]) => {
+      // Find original casing from configured servers or use normalized
+      const configuredServer = configuredServers.get(normalizedId);
+      const objectId = configuredServer?.objectId || normalizedId;
+
+      return {
+        objectId,
+        weight,  // ✅ Extracted from encrypted object
+        // Merge API key configuration if available
+        ...(configuredServer?.apiKeyName && {
+          apiKeyName: configuredServer.apiKeyName,
+          apiKey: configuredServer.apiKey,
+        }),
+      };
     },
   );
+
+  console.log('[DEBUG decryptMasterKey] Extracted server configs from encrypted object:');
+  serverConfigs.forEach((s, i) => {
+    console.log(`  ${i + 1}. ${s.objectId} - weight: ${s.weight} (from encrypted object)`);
+  });
 
   // Create client without server verification for faster decryption
   const { client, suiClient, config } = createSealClient({
     forEncryption: false,
-    serverObjectIds,
+    serverConfigs,
   });
   const {
     kms_package_id: packageId,
@@ -396,15 +445,47 @@ async function retrieveMasterKey() {
   // The encrypted_key is directly the Seal encrypted object
   const sealEncryptedKey = Buffer.from(fields.encrypted_key).toString('hex');
 
-  // Parse the Seal encrypted object to extract server IDs
+  // Parse the Seal encrypted object to extract server IDs and weights
   const encryptedBytes = Buffer.from(sealEncryptedKey, 'hex');
   const parsed = EncryptedObject.parse(encryptedBytes);
-  const serverObjectIds = parsed.services.map(
-    ([objectId, _weight]: [string | Uint8Array, number]) => {
-      if (typeof objectId === 'string') {
-        return objectId.startsWith('0x') ? objectId : `0x${objectId}`;
-      }
-      return `0x${Buffer.from(objectId).toString('hex')}`;
+
+  // Get configured server configs to retrieve API keys
+  const sealConfig = configManager.getSealConfig();
+  const configuredServers = new Map(
+    sealConfig.server_configs.map((s) => [s.objectId.toLowerCase(), s]),
+  );
+
+  // Extract weights from encrypted object by counting server occurrences
+  // In Seal, a server with weight N appears N times in the services array
+  const serverWeights = new Map<string, number>();
+  for (const [objectId, _shareIndex] of parsed.services) {
+    const id =
+      typeof objectId === 'string'
+        ? objectId.startsWith('0x')
+          ? objectId
+          : `0x${objectId}`
+        : `0x${Buffer.from(objectId).toString('hex')}`;
+
+    const normalizedId = id.toLowerCase();
+    serverWeights.set(normalizedId, (serverWeights.get(normalizedId) || 0) + 1);
+  }
+
+  // Build server configs with weights from encrypted object and API keys from config
+  const serverConfigs = Array.from(serverWeights.entries()).map(
+    ([normalizedId, weight]) => {
+      // Find original casing from configured servers or use normalized
+      const configuredServer = configuredServers.get(normalizedId);
+      const objectId = configuredServer?.objectId || normalizedId;
+
+      return {
+        objectId,
+        weight,  // ✅ Extracted from encrypted object
+        // Merge API key configuration if available
+        ...(configuredServer?.apiKeyName && {
+          apiKeyName: configuredServer.apiKeyName,
+          apiKey: configuredServer.apiKey,
+        }),
+      };
     },
   );
 
@@ -412,7 +493,7 @@ async function retrieveMasterKey() {
     encrypted_key: sealEncryptedKey,
     version: Number(fields.version),
     updated_at: Number(fields.updated_at),
-    server_object_ids: serverObjectIds,
+    server_configs: serverConfigs,
   };
 }
 
@@ -571,7 +652,7 @@ export async function retrieveAndDecryptMasterKey() {
  * Also handles rotation if server object IDs have changed
  */
 export async function initializeMasterKey() {
-  const currentServerIds = configManager.getSealConfig().server_object_ids;
+  const currentServerConfigs = configManager.getSealConfig().server_configs;
 
   // Check if key exists
   const record = await retrieveMasterKey();
@@ -587,19 +668,26 @@ export async function initializeMasterKey() {
   // Decrypt the master key
   const decryptedKey = await decryptMasterKey(record.encrypted_key);
 
-  // Check if server object IDs have changed
-  const storedServerIds = record.server_object_ids;
-  const serverIdsChanged =
-    storedServerIds.length !== currentServerIds.length ||
-    storedServerIds.some(
-      (id, index) =>
-        id.toLowerCase() !== currentServerIds[index]?.toLowerCase(),
+  // Check if server configs have changed (compare object IDs only)
+  const storedServerConfigs = record.server_configs;
+  const serverConfigsChanged =
+    storedServerConfigs.length !== currentServerConfigs.length ||
+    storedServerConfigs.some(
+      (config, index) =>
+        config.objectId.toLowerCase() !==
+        currentServerConfigs[index]?.objectId.toLowerCase(),
     );
 
-  if (serverIdsChanged) {
-    console.log('Server object IDs have changed, rotating master key...');
-    console.log('Old server IDs:', storedServerIds);
-    console.log('New server IDs:', currentServerIds);
+  if (serverConfigsChanged) {
+    console.log('Server configs have changed, rotating master key...');
+    console.log(
+      'Old server configs:',
+      storedServerConfigs.map((c) => c.objectId),
+    );
+    console.log(
+      'New server configs:',
+      currentServerConfigs.map((c) => c.objectId),
+    );
 
     // Re-encrypt with new servers (verifies availability)
     const { encryptedKey } = await encryptMasterKey(decryptedKey);
@@ -617,8 +705,8 @@ export async function initializeMasterKey() {
     return currentMasterKey;
   }
 
-  // Server IDs haven't changed
-  console.log('Server object IDs unchanged, master key restored.');
+  // Server configs haven't changed
+  console.log('Server configs unchanged, master key restored.');
   currentMasterKey = {
     masterKey: decryptedKey.toString('hex'),
     masterKeyBuffer: decryptedKey,
