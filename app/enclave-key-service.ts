@@ -519,20 +519,18 @@ export async function processEnclaveKeyRequest(
 }
 
 /**
- * Validates that the requesting enclave is authorized
- * This can include additional checks like allowlists, rate limiting, etc.
+ * Validates that the requesting enclave is authorized.
+ *
+ * Authorization is enforced at the attestation layer: only enclaves with
+ * PCR values matching a registered on-chain EnclaveConfig can obtain keys.
+ * This function provides an additional hook for fine-grained access control
+ * (e.g., allowlisting specific enclave types) if needed in the future.
  */
 export async function isEnclaveAuthorized(
   _enclaveType: string,
 ): Promise<boolean> {
-  // Implement authorization logic here
-  // For example, check against an allowlist of authorized enclave types
-  // Or verify the enclave is registered in a specific registry on Sui
-
-  // The enclaveType includes the full type path, e.g.:
-  // "0x123::module::EnclaveConfig<0x456::app::MyApp>"
-  // This can be used for fine-grained access control
-
-  // For now, we'll allow all valid enclaves
+  // All enclaves that pass PCR attestation verification are authorized.
+  // The enclaveType (e.g., "0x123::module::EnclaveConfig<0x456::app::MyApp>")
+  // can be used for fine-grained filtering if needed.
   return true;
 }
