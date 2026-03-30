@@ -161,8 +161,7 @@ function encryptWithEphemeralKey(
   data: Buffer,
   ephemeralPublicKey: Buffer,
 ): { encrypted: Buffer; iv: Buffer; authTag: Buffer; serverPublicKey: Buffer } {
-  // Generate a shared secret using ECDH
-  // For simplicity, we'll use AES-256-GCM with a derived key
+  // ECIES: ECDH key agreement + AES-256-GCM encryption
 
   // Create a temporary key pair for ECDH
   const ecdh = crypto.createECDH('prime256v1');

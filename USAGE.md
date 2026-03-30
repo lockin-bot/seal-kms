@@ -209,10 +209,6 @@ Possible errors:
 - `Enclave type not authorized` - Your enclave type may not be authorized
 - `Enclave object ID not configured` - The Seal KMS is not properly registered
 
-## Example Implementation
-
-See the test client implementation in `app/test-client.ts` for a complete example of requesting and decrypting a private key.
-
 ## Certificate Verification
 
 The Seal KMS service includes public key certificates with its responses to prove the authenticity of derived public keys. These certificates allow clients to verify that a public key was indeed derived by the legitimate KMS enclave.
@@ -858,14 +854,13 @@ The system automatically verifies key servers when encrypting to ensure they are
 
 ### Parse Encrypted Object
 
-Extract metadata from a Seal encrypted object:
+Extract metadata from a Seal encrypted object using the `@mysten/seal` SDK:
 
 ```typescript
-import { parseEncryptedObject } from './app/master-key.js';
+import { EncryptedObject } from '@mysten/seal';
 
-const { serverObjectIds, threshold, packageId, id } = 
-  parseEncryptedObject(encryptedKeyHex);
+const parsed = EncryptedObject.parse(new Uint8Array(Buffer.from(encryptedKeyHex, 'hex')));
 
-console.log('Encrypted with servers:', serverObjectIds);
-console.log('Requires', threshold, 'servers to decrypt');
+console.log('Encrypted with servers:', parsed.services);
+console.log('Threshold:', parsed.threshold);
 ```
