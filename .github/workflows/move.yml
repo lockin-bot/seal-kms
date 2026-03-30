@@ -30,8 +30,4 @@ jobs:
               extension-matching: true
 
       - name: Run move tests
-        run: |
-          for dir in move/*; do
-            echo "Running sui move test in $dir"
-            sui move test --path $dir
-          done
+        run: make test-move

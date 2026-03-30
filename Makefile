@@ -36,6 +36,11 @@ run-debug: out/nitro.eif
 		--debug-mode \
 		--attach-console
 
+.PHONY: test-move
+test-move:
+	sui move test -i 50000000000 --path move/app
+	sui move test --path move/enclave
+
 .PHONY: update
 update:
 	./update.sh
