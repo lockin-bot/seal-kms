@@ -377,8 +377,6 @@ export function decryptDataHex(
 
 // ======= Core Master Key Lifecycle Functions =======
 
-import type { WithImplicitCoercion } from 'node:buffer';
-
 // In-memory storage for the current master key
 let currentMasterKey: {
   masterKey: string;
