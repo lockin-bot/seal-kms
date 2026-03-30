@@ -52,7 +52,7 @@ export function createSealClient(options?: {
   }));
 
   console.log(
-    '[DEBUG createSealClient] Final server configs passed to SealClient:',
+    `Creating SealClient with ${normalizedServerConfigs.length} server(s):`,
   );
   normalizedServerConfigs.forEach((s, i) => {
     console.log(
@@ -272,7 +272,7 @@ export async function decryptMasterKey(
   });
 
   console.log(
-    `Decrypting master key with enclave ${enclaveObjectId}, using client address ${suiAddress} private key ${keypair.getSecretKey()}, timestamp: ${now}`,
+    `Decrypting master key with enclave ${enclaveObjectId}, using client address ${suiAddress}, timestamp: ${now}`,
   );
   // the object id might not be available yet, so we need to retry
   const txBytes = await (async () => {
@@ -289,15 +289,6 @@ export async function decryptMasterKey(
     }
     throw new Error('Failed to build transaction after 30 attempts');
   })();
-
-  console.log(`Personal message: ${new TextDecoder().decode(message)}`);
-  const exportedSessionKey = sessionKey.export();
-  console.log(
-    `Session key:\n${JSON.stringify(Object.fromEntries(Object.entries(exportedSessionKey)))}`,
-  );
-  console.log(
-    `Transaction bytes:\n${Buffer.from(txBytes as unknown as WithImplicitCoercion<ArrayBufferLike>, txBytes.byteOffset, txBytes.byteLength).toString('hex')}`,
-  );
 
   // Seal decryption - gets the inner AES encrypted data
   const decryptedBytes = await client.decrypt({
@@ -390,8 +381,6 @@ export function decryptDataHex(
 }
 
 // ======= Core Master Key Lifecycle Functions =======
-
-import type { WithImplicitCoercion } from 'node:buffer';
 
 // In-memory storage for the current master key
 let currentMasterKey: {

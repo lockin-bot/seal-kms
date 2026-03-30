@@ -49,7 +49,7 @@ async function startServer() {
   }
 
   const config = configManager.getConfig();
-  console.log('Configuration loaded:', config);
+  console.log('Configuration loaded for network:', config.seal.sui_network);
 
   const app = express();
   const proxyHandler = createProxyMiddleware({

@@ -16,7 +16,7 @@ const EInvalidPCRs: u64 = 0;
 const EInvalidConfigVersion: u64 = 1;
 const EInvalidCap: u64 = 2;
 const EInvalidOwner: u64 = 3;
-const EInvalidRegister: u64 = 3;
+const EInvalidRegister: u64 = 4;
 
 // PCR0: Enclave image file
 // PCR1: Enclave Kernel
