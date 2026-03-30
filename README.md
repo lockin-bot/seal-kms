@@ -200,9 +200,9 @@ Proxied to the enclave server. Returns an attestation document committed to the 
 
 #### Debug Endpoints
 
-These endpoints are for testing and development:
+These endpoints are **only available when `sui_network` is set to `testnet`** in the enclave configuration. They are disabled in production environments.
 
-- `GET /debug/master-key` - Returns the master public key
+- `GET /debug/master-key` - Returns the master public key hash
 - `POST /debug/master-key/encrypt` - Encrypts data with the master key
 - `POST /debug/master-key/decrypt` - Decrypts data with the master key
 
@@ -268,6 +268,46 @@ Health check endpoint.
   "pk": "hex..."  // Hex-encoded public key
 }
 ```
+
+## Master Key Management
+
+### Persistent Key Strategy (Seal+PTB)
+
+The production key management approach uses a persistent master key protected by Seal threshold encryption:
+
+1. **First boot (one-time setup):** The enclave generates a master key, encrypts it with Seal (3-of-n threshold), applies an additional AES-256-GCM encryption layer, and stores the double-encrypted key on-chain as a shared `EncryptedMasterKey` object.
+
+2. **Subsequent boots:** The enclave loads the encrypted master key from on-chain storage, decrypts the AES layer locally, then uses a Programmable Transaction Block (PTB) with fresh attestation to request Seal threshold decryption. Seal key servers verify the attestation matches the registered `EnclaveConfig` (PCR values) before releasing their shares.
+
+### On-Chain Key Rotation
+
+The Move contract provides a `set_master_key` function (intent type `SET_MASTER_KEY_INTENT = 1`) that allows the enclave to update the encrypted master key on-chain. This is used for:
+
+- **Seal server rotation:** When key server configurations change, the master key is decrypted with the old servers and re-encrypted with the new servers automatically on startup.
+- **Key versioning:** The `EncryptedMasterKey` object tracks a `version` counter and `updated_at` timestamp for auditability.
+
+Both `seal_approve` and `set_master_key` require a valid enclave signature verified against the registered `Enclave` object's public key.
+
+### Move Contract Structure
+
+The on-chain logic is split into two packages:
+
+- **`move/enclave/`** — Generic enclave registration and verification framework. Handles `EnclaveConfig` (PCR storage), `Enclave` (registered instance with public key), `Cap` (admin capability), and `IntentMessage` signature verification. Reusable by any application.
+- **`move/app/`** — KMS-specific logic. Defines `seal_approve` (Seal access control), `set_master_key` (key rotation), and the `EncryptedMasterKey` shared object.
+
+## Security Considerations
+
+### Cross-Server Replay Protection
+
+While the Seal SDK sends the same signed personal message to all key servers, responses from each server are encrypted to the requester's ephemeral session key. A compromised key server cannot decrypt responses from other servers, even if it replays the signed request. Threshold shares remain protected.
+
+### Debug Endpoint Isolation
+
+Debug endpoints (`/debug/*`) are gated by the `sui_network` configuration value. They are only registered when `sui_network === 'testnet'`. Production deployments must use a non-testnet network configuration to ensure these endpoints are not available.
+
+### Key Derivation Isolation
+
+Keys are derived using HKDF-SHA256 with the full enclave type string (e.g., `0x123::module::EnclaveConfig<0x456::app::MyApp>`) as the context. Different enclave types always receive different derived keys, even from the same master key.
 
 ## Contributing
 
