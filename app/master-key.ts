@@ -52,8 +52,13 @@ export function createSealClient(options?: {
   }));
 
   console.log(
-    `Creating SealClient with ${normalizedServerConfigs.length} server(s)`,
+    `Creating SealClient with ${normalizedServerConfigs.length} server(s):`,
   );
+  normalizedServerConfigs.forEach((s, i) => {
+    console.log(
+      `  ${i + 1}. ${s.objectId} - weight: ${s.weight} ${s.apiKeyName ? `(API key: ${s.apiKeyName})` : ''}`,
+    );
+  });
 
   // Verify key servers if this client will be used for encryption
   const shouldVerify = options?.forEncryption ?? false;
