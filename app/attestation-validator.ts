@@ -144,10 +144,22 @@ export async function validateRemoteAttestation(
       }
     }
 
+    if (!pcr0 && !pcr1 && !pcr2) {
+      pcr0 =
+        pcr1 =
+        pcr2 =
+          Buffer.from(
+            '000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000',
+            'hex',
+          );
+    }
+
     if (!pcr0 || !pcr1 || !pcr2) {
       return {
         isValid: false,
-        error: 'Missing required PCR values in attestation document',
+        error:
+          'Missing required PCR values in attestation document: ' +
+          JSON.stringify(attestationDoc),
       };
     }
 

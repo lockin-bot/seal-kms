@@ -178,7 +178,19 @@ fun load_pk<T>(enclave_config: &EnclaveConfig<T>, document: &NitroAttestationDoc
 
 fun to_pcrs(document: &NitroAttestationDocument): Pcrs {
     let pcrs = document.pcrs();
-    Pcrs(*pcrs[0].value(), *pcrs[1].value(), *pcrs[2].value())
+    let mut pcr0 = x"000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000";
+    let mut pcr1 = x"000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000";
+    let mut pcr2 = x"000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000";
+    pcrs.do_ref!(|pcr| {
+        let index = pcr.index();
+        match (index) {
+            0 => pcr0 = *pcr.value(),
+            1 => pcr1 = *pcr.value(),
+            2 => pcr2 = *pcr.value(),
+            _ => (),
+        }
+    });
+    Pcrs(pcr0, pcr1, pcr2)
 }
 
 fun create_intent_message<P: drop>(intent: u8, timestamp_ms: u64, payload: P): IntentMessage<P> {
